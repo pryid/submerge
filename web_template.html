@@ -1,0 +1,186 @@
+<!doctype html><html><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>$TITLE • $SID</title>
+<style>
+:root{--bg:#0b0f17;--c:rgba(255,255,255,.06);--t:rgba(255,255,255,.92);--m:rgba(255,255,255,.62);--s:rgba(255,255,255,.10)}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--bg);overflow-x:hidden}
+body{margin:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+background:radial-gradient(1200px 600px at 20% -10%, rgba(100,160,255,.18), transparent 50%),var(--bg);color:var(--t)}
+.wrap{max-width:980px;margin:0 auto;padding:22px 16px 44px}
+.top{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:880px){.top{grid-template-columns:1fr 320px}}
+h1{margin:0 0 6px;font-size:18px}
+.sub{color:var(--m);font-size:13px}
+.chips{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--s);background:rgba(255,255,255,.03);padding:8px 10px;border-radius:999px;color:var(--m);font-size:13px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.btn{border:1px solid var(--s);background:var(--c);color:var(--t);padding:10px 12px;border-radius:12px;cursor:pointer;font-size:13px}
+.btn:hover{background:rgba(255,255,255,.09)}
+.panel{margin-top:14px;border:1px solid var(--s);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)}
+.hd{padding:12px 14px;border-bottom:1px solid var(--s);display:flex;justify-content:space-between;color:var(--m);font-size:13px}
+.bd{padding:10px;max-height:64vh;overflow:auto}
+.row{width:100%;text-align:left;border:1px solid var(--s);background:rgba(255,255,255,.03);color:var(--t);padding:10px;border-radius:14px;cursor:pointer;display:grid;gap:8px;margin-bottom:10px}
+.row:hover{background:rgba(255,255,255,.06)}
+.name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr{border:1px solid var(--s);border-radius:16px;background:rgba(255,255,255,.03);padding:14px;display:grid;justify-items:center;gap:10px}
+.qr img{width:220px;height:220px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06)}
+.lang{border:1px solid var(--s);background:rgba(255,255,255,.03);color:var(--t);padding:8px 10px;border-radius:12px}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(15,20,30,.92);border:1px solid rgba(255,255,255,.16);
+padding:10px 12px;border-radius:14px;font-size:13px;opacity:0;transition:opacity .2s ease, transform .2s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-2px)}
+pre{margin:0;padding:12px 14px;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:rgba(255,255,255,.88)}
+details{margin-top:14px;border:1px solid var(--s);border-radius:16px;background:rgba(255,255,255,.03);overflow:hidden}
+summary{cursor:pointer;padding:12px 14px;color:var(--m);font-size:13px;border-bottom:1px solid var(--s);list-style:none}
+summary::-webkit-details-marker{display:none}
+.note{border:1px solid var(--s);background:rgba(255,210,120,.18);border-radius:14px;padding:10px 12px;margin:10px 0 0;font-size:13px}
+</style></head><body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+        <div>
+          <h1 id="t">$TITLE</h1>
+          <div class="sub">ID: <span style="font-family:ui-monospace,Menlo,Consolas">$SID</span></div>
+        </div>
+        <div><select class="lang" id="langSel"><option value="ru">Русский</option><option value="en">English</option></select></div>
+      </div>
+
+      <div class="chips">
+        <div class="chip" id="chipRemaining"></div>
+        <div class="chip" id="chipLinks"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" type="button" id="copySub">Copy URL</button>
+        <button class="btn" type="button" id="copyAll">Copy all</button>
+      </div>
+
+      $NOTE
+    </div>
+
+    <div class="qr">
+      $QR
+      <div class="sub" style="text-align:center">
+        <div id="scan">Scan to add subscription</div>
+        <div style="margin-top:6px;font-family:ui-monospace,Menlo,Consolas;font-size:12px;word-break:break-all">$SUBURL</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="hd"><div id="listLbl">List</div><div id="hint">click item → copy</div></div>
+    <div class="bd" id="list">$ITEMS</div>
+  </div>
+
+  <details>
+    <summary id="detailsLbl">Merged raw + subscription-userinfo</summary>
+    <pre id="userinfo">$USERINFO</pre>
+    <pre id="raw">$RAW</pre>
+    <div class="actions" style="padding:0 14px 14px"><button class="btn" type="button" id="copyRaw">Copy merged RAW</button></div>
+  </details>
+</div>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+const SUB_URL = $SUBURL_JS;
+const LINKS = $LINKS;
+const UI = { kind:$KIND, total:$TOTAL, used:$USED, remain:$REMAIN };
+const I18N = $I18N_JSON;
+
+function gb(b){ return (b/1000000000).toFixed(2); }
+function fmt(template, vars){
+  let out=String(template||"");
+  Object.entries(vars||{}).forEach(([k,v])=>{
+    out=out.replaceAll("{"+k+"}", String(v));
+  });
+  return out;
+}
+function remText(lang){
+  const t=I18N[lang]||I18N.en;
+  if (!UI) return t.no;
+  if (UI.kind==="unlimited") return t.unlim;
+  if (UI.kind!=="limited" && UI.kind!=="limited_partial") return t.no;
+  return fmt(t.lim, {remain:gb(UI.remain||0), total:gb(UI.total||0), used:gb(UI.used||0)});
+}
+const byId = (id) => document.getElementById(id);
+const titleEl = byId("t");
+const scanEl = byId("scan");
+const listLblEl = byId("listLbl");
+const hintEl = byId("hint");
+const detailsLblEl = byId("detailsLbl");
+const copySubEl = byId("copySub");
+const copyAllEl = byId("copyAll");
+const copyRawEl = byId("copyRaw");
+const chipLinksEl = byId("chipLinks");
+const chipRemainingEl = byId("chipRemaining");
+const rawEl = byId("raw");
+const langSel = byId("langSel");
+
+function apply(lang){
+  const t=I18N[lang]||I18N.en;
+  if (titleEl) titleEl.textContent=t.title;
+  if (scanEl) scanEl.textContent=t.scan;
+  if (listLblEl) listLblEl.textContent=t.list;
+  if (hintEl) hintEl.textContent=t.hint;
+  if (detailsLblEl) detailsLblEl.textContent=t.details;
+  if (copySubEl) copySubEl.textContent=t.copyUrl;
+  if (copyAllEl) copyAllEl.textContent=t.copyAll;
+  if (copyRawEl) copyRawEl.textContent=t.copyRaw;
+  if (chipLinksEl) chipLinksEl.textContent=fmt(t.links, {n: LINKS});
+  if (chipRemainingEl) chipRemainingEl.textContent=remText(lang);
+}
+function toast(msg){
+  const t=byId("toast");
+  if (!t) return;
+  t.textContent=msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),1200);
+}
+async function copyText(text){
+  try{
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(e){}
+  try{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.left="-9999px";
+       document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok; }catch(_){ return false; }
+}
+let stored="";
+try { stored=(localStorage.getItem("lang")||"").toLowerCase(); } catch(_) {}
+const auto=(navigator.language||"").toLowerCase().startsWith("ru")?"ru":"en";
+if (langSel) {
+  langSel.value=(stored==="ru"||stored==="en")?stored:auto;
+  apply(langSel.value);
+  langSel.addEventListener("change",()=>{
+    try { localStorage.setItem("lang",langSel.value); } catch(_) {}
+    apply(langSel.value);
+  });
+} else {
+  apply(auto);
+}
+
+document.addEventListener("click", async (e)=>{
+  if (!(e.target instanceof Element)) return;
+  const b=e.target.closest("button.row"); if(!b) return;
+  const ok=await copyText(b.getAttribute("data-copy")||"");
+  const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+});
+if (copySubEl) copySubEl.addEventListener("click", async ()=>{
+  const ok=await copyText(SUB_URL); const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+});
+if (copyAllEl) copyAllEl.addEventListener("click", async ()=>{
+  const items=Array.from(document.querySelectorAll("#list button.row"))
+    .map((x)=>x.getAttribute("data-copy")||"")
+    .filter(Boolean);
+  const ok=items.length>0 ? await copyText(items.join("\n")) : false;
+  const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+});
+if (copyRawEl) copyRawEl.addEventListener("click", async ()=>{
+  const ok=await copyText((rawEl && rawEl.textContent)||"");
+  const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+});
+</script></body></html>

@@ -1,0 +1,25 @@
+[Unit]
+PartOf=main-pod.service
+Wants=main-pod.service
+After=main-pod.service
+
+[Container]
+Image=docker.io/library/python:3.12-alpine
+Pod=main.pod
+AutoUpdate=registry
+Volume=/opt/submerge:/opt/submerge:Z
+
+Environment=SUB_BASES=https://de.example.com,https://fr.example.com
+Environment=LISTEN_HOST=0.0.0.0
+Environment=LISTEN_PORT=18080
+Environment=TIMEOUT=10
+Environment=ALLOW_PARTIAL=1
+Environment=PAGE_TITLE=Sub-merge
+
+Exec=/bin/sh -lc "python3 -m pip install --no-cache-dir -q qrcode || true; exec python3 /opt/submerge/submerge.py"
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

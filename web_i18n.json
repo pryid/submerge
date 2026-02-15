@@ -1,0 +1,34 @@
+{
+  "ru": {
+    "title": "Просмотр подписки (merge)",
+    "scan": "Сканируй, чтобы добавить подписку",
+    "list": "Список",
+    "hint": "клик по пункту → копировать",
+    "details": "Объединенный RAW + subscription-userinfo",
+    "copyUrl": "Скопировать URL",
+    "copyAll": "Скопировать всё",
+    "copyRaw": "Скопировать merged RAW",
+    "links": "Ссылок: {n}",
+    "no": "Осталось: —",
+    "unlim": "Осталось: безлимит",
+    "lim": "Осталось: {remain} GB из {total} GB (исп.: {used} GB)",
+    "ok": "Скопировано",
+    "fail": "Не удалось"
+  },
+  "en": {
+    "title": "Subscription viewer (merge)",
+    "scan": "Scan to add subscription",
+    "list": "List",
+    "hint": "click item → copy",
+    "details": "Merged raw + subscription-userinfo",
+    "copyUrl": "Copy URL",
+    "copyAll": "Copy all",
+    "copyRaw": "Copy merged RAW",
+    "links": "Links: {n}",
+    "no": "Remaining: —",
+    "unlim": "Remaining: unlimited",
+    "lim": "Remaining: {remain} GB of {total} GB (used: {used} GB)",
+    "ok": "Copied",
+    "fail": "Copy failed"
+  }
+}
