@@ -27,3 +27,6 @@ Desktop.ini
 # Tooling caches
 .ruff_cache/
 .mypy_cache/
+
+# Local deployment config with real rewrite targets
+link_rewrites.json

@@ -37,8 +37,63 @@ Environment variables:
 - `TIMEOUT` (default: `10`)
 - `ALLOW_PARTIAL` (default: `1`)
 - `PAGE_TITLE` (default: `Sub-merge`)
+- `SUB_LINK_REWRITES` (optional): JSON object with link rewrite rules
+- `SUB_LINK_REWRITES_FILE` (optional): path to a JSON file with link rewrite rules; takes precedence over `SUB_LINK_REWRITES`
+- `SUB_REWRITE_DNS_TTL` (default: `300`): DNS cache TTL in seconds for host rewrites
 - `HTML_TEMPLATE_FILE` (default: `./web_template.html` next to `submerge.py`)
 - `I18N_FILE` (default: `./web_i18n.json` next to `submerge.py`)
+
+## Link Rewrites
+
+Rewrites are applied only to decoded URL-style subscription links whose host matches a configured rule. They run before merge de-duplication, so raw output, HTML view, and duplicate handling all use the same final link.
+
+Example `/opt/submerge/link_rewrites.json`:
+
+```json
+{
+  "ru.example.com": {
+    "resolve_host": true,
+    "query": {
+      "sni": "front-primary.example.com"
+    }
+  },
+  "ru-backup.example.com": {
+    "resolve_host": true,
+    "query": {
+      "sni": "front-backup.example.com"
+    }
+  }
+}
+```
+
+Then add this to the container config:
+
+```ini
+Environment=SUB_LINK_REWRITES_FILE=/opt/submerge/link_rewrites.json
+```
+
+The JSON file is not auto-discovered. Rewrites are enabled only when `SUB_LINK_REWRITES_FILE` or `SUB_LINK_REWRITES` is present in the service environment.
+
+Supported rule fields:
+
+- `resolve_host`: when true, resolves the original link host and replaces it with the resolved IP address
+- `address`: optional fixed address replacement; if set, it is used instead of DNS resolution
+- `query`: object of query parameters to force, for example `{"sni": "example.com"}`
+
+After changing the Quadlet container file or the rewrite JSON file, reload and restart the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart submerge.service
+```
+
+Check that the generated service contains the rewrite environment:
+
+```bash
+sudo systemctl cat submerge.service | grep SUB_LINK_REWRITES
+```
+
+Keep deployment-specific rewrite files out of git. The repository ignores `link_rewrites.json` for this reason.
 
 ## Run Locally (Python)
 
@@ -62,13 +117,15 @@ sudo mkdir -p /opt/submerge
 sudo cp submerge.py web_template.html web_i18n.json /opt/submerge/
 ```
 
-2. Install the quadlet unit (adjust path depending on your setup), then reload and start:
+2. Install the Quadlet source file (adjust path depending on your setup), then reload generators and start the generated service:
 
 ```bash
 sudo cp submerge.container /etc/containers/systemd/submerge.container
 sudo systemctl daemon-reload
-sudo systemctl enable --now submerge.service
+sudo systemctl start submerge.service
 ```
+
+Do not use `systemctl enable --now` for the generated Quadlet service. The persistent source of truth is `/etc/containers/systemd/submerge.container`; its `[Install]` section defines the boot target, and `daemon-reload` regenerates the corresponding systemd service.
 
 3. Check logs:
 
@@ -84,14 +141,22 @@ Add this block to your nginx config:
 location ~ ^/sub-merge/([A-Za-z0-9_-]+)$ {
     proxy_pass http://127.0.0.1:18080/sub/$1;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Range $http_range;
+    proxy_set_header If-Range $http_if_range;
     proxy_redirect off;
 
     proxy_intercept_errors on;
-    error_page 400 404 =404 /__nginx_404;
+    limit_req zone=one burst=20 nodelay;
+    error_page 400 404 =404 @nginx_404;
 }
 
-location = /__nginx_404 { return 404; }
+location @nginx_404 {
+    return 404;
+}
 ```
+
+The `limit_req` line requires a matching `limit_req_zone` in the nginx `http` context.
 
 Then reload nginx:
 
@@ -110,6 +175,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 - Changes in `web_template.html` and `web_i18n.json` are picked up on page refresh (no service restart needed).
 - Changes in `submerge.py` require service restart.
+- Changes in `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the referenced rewrite file require service restart.
 
 ## Notes
 

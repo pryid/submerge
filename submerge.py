@@ -4,11 +4,14 @@ import html
 import json
 import os
 import re
+import socket
+import time
 import urllib.request
+from dataclasses import dataclass, field
 from urllib.error import HTTPError, URLError
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from string import Template
-from urllib.parse import urlparse, unquote
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse, unquote
 
 # ---------------- config (минимум env) ----------------
 def env(name: str, default: str | None = None) -> str:
@@ -28,6 +31,9 @@ LISTEN_PORT = int(env("LISTEN_PORT", "18080"))
 TIMEOUT = float(env("TIMEOUT", "10"))
 ALLOW_PARTIAL = env("ALLOW_PARTIAL", "1").lower() not in ("0", "false", "no")
 PAGE_TITLE = env("PAGE_TITLE", "Sub-merge")
+SUB_LINK_REWRITES = os.environ.get("SUB_LINK_REWRITES", "").strip()
+SUB_LINK_REWRITES_FILE = os.environ.get("SUB_LINK_REWRITES_FILE", "").strip()
+SUB_REWRITE_DNS_TTL = float(env("SUB_REWRITE_DNS_TTL", "300"))
 
 # внутренний путь, на который nginx проксирует: /sub/<id>
 INTERNAL_PREFIX = "/sub/"
@@ -42,6 +48,99 @@ PASS_HEADERS = {
     "routing-enable",
     "support-url",
 }
+
+@dataclass
+class LinkRewriteRule:
+    resolve_host: bool = False
+    address: str | None = None
+    query: dict[str, str] = field(default_factory=dict)
+
+
+def config_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("1", "true", "yes", "on"):
+            return True
+        if v in ("0", "false", "no", "off", ""):
+            return False
+    raise SystemExit(f"Invalid boolean value in link rewrites: {value!r}")
+
+
+def normalize_host(host: str) -> str:
+    host = str(host or "").strip().rstrip(".")
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    return host.lower()
+
+
+def parse_link_rewrite_rules(data) -> dict[str, LinkRewriteRule]:
+    if not data:
+        return {}
+    if not isinstance(data, dict):
+        raise SystemExit("SUB_LINK_REWRITES must be a JSON object")
+
+    rules: dict[str, LinkRewriteRule] = {}
+    for raw_host, raw_rule in data.items():
+        host = normalize_host(raw_host)
+        if not host:
+            raise SystemExit("SUB_LINK_REWRITES contains an empty host")
+        if not isinstance(raw_rule, dict):
+            raise SystemExit(f"SUB_LINK_REWRITES[{raw_host!r}] must be an object")
+
+        address = raw_rule.get("address")
+        if address is not None:
+            address = str(address).strip() or None
+
+        raw_query = raw_rule.get("query", {})
+        if raw_query is None:
+            raw_query = {}
+        if not isinstance(raw_query, dict):
+            raise SystemExit(f"SUB_LINK_REWRITES[{raw_host!r}].query must be an object")
+
+        query = {}
+        for key, value in raw_query.items():
+            key = str(key).strip()
+            if not key:
+                raise SystemExit(f"SUB_LINK_REWRITES[{raw_host!r}].query contains an empty key")
+            if value is not None:
+                query[key] = str(value)
+
+        rules[host] = LinkRewriteRule(
+            resolve_host=config_bool(raw_rule.get("resolve_host"), False),
+            address=address,
+            query=query,
+        )
+    return rules
+
+
+def load_link_rewrite_rules() -> dict[str, LinkRewriteRule]:
+    if SUB_LINK_REWRITES_FILE:
+        try:
+            with open(SUB_LINK_REWRITES_FILE, "r", encoding="utf-8") as f:
+                raw = f.read()
+        except OSError as e:
+            raise SystemExit(f"Cannot read SUB_LINK_REWRITES_FILE: {e}") from e
+        source = SUB_LINK_REWRITES_FILE
+    elif SUB_LINK_REWRITES:
+        raw = SUB_LINK_REWRITES
+        source = "SUB_LINK_REWRITES"
+    else:
+        return {}
+
+    try:
+        return parse_link_rewrite_rules(json.loads(raw))
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"Invalid JSON in {source}: {e}") from e
+
+
+LINK_REWRITE_RULES = load_link_rewrite_rules()
+DNS_CACHE: dict[str, tuple[float, str]] = {}
 
 try:
     import qrcode  # type: ignore
@@ -96,6 +195,112 @@ def decode_b64_plain_list(s: str):
 
 def lines_to_b64(lines):
     return base64.b64encode(("\n".join(lines)).encode("utf-8")).decode("ascii")
+
+def resolve_host_ip(host: str) -> str | None:
+    host = normalize_host(host)
+    if not host:
+        return None
+
+    now = time.monotonic()
+    cached = DNS_CACHE.get(host)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return cached[1] if cached else None
+
+    ip = None
+    for family, _socktype, _proto, _canonname, sockaddr in infos:
+        if family == socket.AF_INET:
+            ip = sockaddr[0]
+            break
+    if ip is None and infos:
+        ip = infos[0][4][0]
+
+    if ip and SUB_REWRITE_DNS_TTL > 0:
+        DNS_CACHE[host] = (now + SUB_REWRITE_DNS_TTL, ip)
+    return ip
+
+def host_for_netloc(host: str) -> str:
+    host = str(host).strip()
+    if ":" in host and not (host.startswith("[") and host.endswith("]")):
+        return f"[{host}]"
+    return host
+
+def replace_netloc_host(netloc: str, new_host: str) -> str:
+    head, sep, hostport = netloc.rpartition("@")
+    prefix = f"{head}{sep}" if sep else ""
+
+    if hostport.startswith("["):
+        end = hostport.find("]")
+        suffix = hostport[end + 1:] if end >= 0 else ""
+    else:
+        _host, sep2, rest = hostport.partition(":")
+        suffix = f"{sep2}{rest}" if sep2 else ""
+
+    return f"{prefix}{host_for_netloc(new_host)}{suffix}"
+
+def rewrite_query_params(query: str, overrides: dict[str, str]) -> str:
+    pairs = parse_qsl(query, keep_blank_values=True)
+    out = []
+    replaced = set()
+
+    for key, value in pairs:
+        if key in overrides:
+            if key not in replaced:
+                out.append((key, overrides[key]))
+                replaced.add(key)
+            continue
+        out.append((key, value))
+
+    for key, value in overrides.items():
+        if key not in replaced:
+            out.append((key, value))
+
+    return urlencode(out)
+
+def rewrite_subscription_link(
+    link: str,
+    rules: dict[str, LinkRewriteRule] | None = None,
+    resolver=resolve_host_ip,
+) -> str:
+    rules = LINK_REWRITE_RULES if rules is None else rules
+    if not rules:
+        return link
+
+    try:
+        parsed = urlparse(link)
+    except Exception:
+        return link
+
+    host = parsed.hostname
+    if not host:
+        return link
+
+    rule = rules.get(normalize_host(host))
+    if not rule:
+        return link
+
+    netloc = parsed.netloc
+    if rule.address:
+        netloc = replace_netloc_host(netloc, rule.address)
+    elif rule.resolve_host:
+        try:
+            resolved = resolver(host)
+        except Exception:
+            resolved = None
+        if resolved:
+            netloc = replace_netloc_host(netloc, resolved)
+
+    query = rewrite_query_params(parsed.query, rule.query) if rule.query else parsed.query
+    return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, query, parsed.fragment))
+
+def rewrite_subscription_lines(lines: list[str]) -> list[str]:
+    if not LINK_REWRITE_RULES:
+        return lines
+    return [rewrite_subscription_link(ln) for ln in lines]
 
 def parse_userinfo_one(h: str):
     # upload=...; download=...; total=...
@@ -267,7 +472,7 @@ def merge_from_all(sub_id: str):
             h0 = ok[0][3]
             return 200, ok[0][2], h0, None, "Non-plain format detected, using first successful as-is", [x[3] for x in ok]
 
-        decoded_sets.append(lines)
+        decoded_sets.append(rewrite_subscription_lines(lines))
 
     # merge + dedup preserving order
     seen = set()
