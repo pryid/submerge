@@ -72,7 +72,7 @@ Then add this to the container config:
 Environment=SUB_LINK_REWRITES_FILE=/opt/submerge/link_rewrites.json
 ```
 
-The JSON file is not auto-discovered. Rewrites are enabled only when `SUB_LINK_REWRITES_FILE` or `SUB_LINK_REWRITES` is present in the service environment.
+The JSON file is not auto-discovered. Rewrites are enabled only when `SUB_LINK_REWRITES_FILE` or `SUB_LINK_REWRITES` is present in the service environment. When `SUB_LINK_REWRITES_FILE` is used, changes to that file are picked up on the next subscription request without restarting the service.
 
 Supported rule fields:
 
@@ -80,7 +80,7 @@ Supported rule fields:
 - `address`: optional fixed address replacement; if set, it is used instead of DNS resolution
 - `query`: object of query parameters to force, for example `{"sni": "example.com"}`
 
-After changing the Quadlet container file or the rewrite JSON file, reload and restart the service:
+After changing the Quadlet container file or the rewrite environment variables, reload and restart the service:
 
 ```bash
 sudo systemctl daemon-reload
@@ -92,6 +92,8 @@ Check that the generated service contains the rewrite environment:
 ```bash
 sudo systemctl cat submerge.service | grep SUB_LINK_REWRITES
 ```
+
+If the rewrite JSON file becomes invalid while the service is running, Submerge keeps the last valid rewrite rules and logs a warning.
 
 Keep deployment-specific rewrite files out of git. The repository ignores `link_rewrites.json` for this reason.
 
@@ -175,7 +177,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 - Changes in `web_template.html` and `web_i18n.json` are picked up on page refresh (no service restart needed).
 - Changes in `submerge.py` require service restart.
-- Changes in `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the referenced rewrite file require service restart.
+- Changes in the file referenced by `SUB_LINK_REWRITES_FILE` are picked up on the next subscription request.
+- Changes in `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the Quadlet container file require service restart.
 
 ## Notes
 

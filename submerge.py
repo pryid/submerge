@@ -5,6 +5,7 @@ import json
 import os
 import re
 import socket
+import sys
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -69,7 +70,7 @@ def config_bool(value, default: bool = False) -> bool:
             return True
         if v in ("0", "false", "no", "off", ""):
             return False
-    raise SystemExit(f"Invalid boolean value in link rewrites: {value!r}")
+    raise ValueError(f"Invalid boolean value in link rewrites: {value!r}")
 
 
 def normalize_host(host: str) -> str:
@@ -79,19 +80,19 @@ def normalize_host(host: str) -> str:
     return host.lower()
 
 
-def parse_link_rewrite_rules(data) -> dict[str, LinkRewriteRule]:
+def parse_link_rewrite_rules(data, source: str = "SUB_LINK_REWRITES") -> dict[str, LinkRewriteRule]:
     if not data:
         return {}
     if not isinstance(data, dict):
-        raise SystemExit("SUB_LINK_REWRITES must be a JSON object")
+        raise ValueError(f"{source} must be a JSON object")
 
     rules: dict[str, LinkRewriteRule] = {}
     for raw_host, raw_rule in data.items():
         host = normalize_host(raw_host)
         if not host:
-            raise SystemExit("SUB_LINK_REWRITES contains an empty host")
+            raise ValueError(f"{source} contains an empty host")
         if not isinstance(raw_rule, dict):
-            raise SystemExit(f"SUB_LINK_REWRITES[{raw_host!r}] must be an object")
+            raise ValueError(f"{source}[{raw_host!r}] must be an object")
 
         address = raw_rule.get("address")
         if address is not None:
@@ -101,13 +102,13 @@ def parse_link_rewrite_rules(data) -> dict[str, LinkRewriteRule]:
         if raw_query is None:
             raw_query = {}
         if not isinstance(raw_query, dict):
-            raise SystemExit(f"SUB_LINK_REWRITES[{raw_host!r}].query must be an object")
+            raise ValueError(f"{source}[{raw_host!r}].query must be an object")
 
         query = {}
         for key, value in raw_query.items():
             key = str(key).strip()
             if not key:
-                raise SystemExit(f"SUB_LINK_REWRITES[{raw_host!r}].query contains an empty key")
+                raise ValueError(f"{source}[{raw_host!r}].query contains an empty key")
             if value is not None:
                 query[key] = str(value)
 
@@ -119,28 +120,79 @@ def parse_link_rewrite_rules(data) -> dict[str, LinkRewriteRule]:
     return rules
 
 
-def load_link_rewrite_rules() -> dict[str, LinkRewriteRule]:
+def parse_link_rewrite_rules_json(raw: str, source: str) -> dict[str, LinkRewriteRule]:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {source}: {e}") from e
+    return parse_link_rewrite_rules(data, source)
+
+
+def link_rewrite_file_signature(path: str) -> tuple[int, int, int]:
+    st = os.stat(path)
+    return (int(st.st_ino), int(st.st_size), int(st.st_mtime_ns))
+
+
+def load_link_rewrite_rules_file(path: str) -> tuple[dict[str, LinkRewriteRule], tuple[int, int, int]]:
+    sig = link_rewrite_file_signature(path)
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    return parse_link_rewrite_rules_json(raw, path), sig
+
+
+def load_link_rewrite_rules() -> tuple[dict[str, LinkRewriteRule], tuple[int, int, int] | None]:
     if SUB_LINK_REWRITES_FILE:
         try:
-            with open(SUB_LINK_REWRITES_FILE, "r", encoding="utf-8") as f:
-                raw = f.read()
-        except OSError as e:
+            return load_link_rewrite_rules_file(SUB_LINK_REWRITES_FILE)
+        except (OSError, ValueError) as e:
             raise SystemExit(f"Cannot read SUB_LINK_REWRITES_FILE: {e}") from e
-        source = SUB_LINK_REWRITES_FILE
     elif SUB_LINK_REWRITES:
-        raw = SUB_LINK_REWRITES
-        source = "SUB_LINK_REWRITES"
-    else:
-        return {}
+        try:
+            return parse_link_rewrite_rules_json(SUB_LINK_REWRITES, "SUB_LINK_REWRITES"), None
+        except ValueError as e:
+            raise SystemExit(str(e)) from e
+    return {}, None
+
+
+LINK_REWRITE_RULES, LINK_REWRITE_FILE_SIG = load_link_rewrite_rules()
+LINK_REWRITE_LAST_ERROR: str | None = None
+
+DNS_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def warn_link_rewrite_reload_error(message: str):
+    global LINK_REWRITE_LAST_ERROR
+    if message == LINK_REWRITE_LAST_ERROR:
+        return
+    LINK_REWRITE_LAST_ERROR = message
+    print(f"submerge: keeping previous link rewrite rules: {message}", file=sys.stderr, flush=True)
+
+
+def current_link_rewrite_rules() -> dict[str, LinkRewriteRule]:
+    global LINK_REWRITE_FILE_SIG, LINK_REWRITE_LAST_ERROR, LINK_REWRITE_RULES
+
+    if not SUB_LINK_REWRITES_FILE:
+        return LINK_REWRITE_RULES
 
     try:
-        return parse_link_rewrite_rules(json.loads(raw))
-    except json.JSONDecodeError as e:
-        raise SystemExit(f"Invalid JSON in {source}: {e}") from e
+        sig = link_rewrite_file_signature(SUB_LINK_REWRITES_FILE)
+    except OSError as e:
+        warn_link_rewrite_reload_error(f"cannot stat {SUB_LINK_REWRITES_FILE}: {e}")
+        return LINK_REWRITE_RULES
 
+    if sig == LINK_REWRITE_FILE_SIG:
+        return LINK_REWRITE_RULES
 
-LINK_REWRITE_RULES = load_link_rewrite_rules()
-DNS_CACHE: dict[str, tuple[float, str]] = {}
+    try:
+        rules, loaded_sig = load_link_rewrite_rules_file(SUB_LINK_REWRITES_FILE)
+    except (OSError, ValueError) as e:
+        warn_link_rewrite_reload_error(f"cannot reload {SUB_LINK_REWRITES_FILE}: {e}")
+        return LINK_REWRITE_RULES
+
+    LINK_REWRITE_RULES = rules
+    LINK_REWRITE_FILE_SIG = loaded_sig
+    LINK_REWRITE_LAST_ERROR = None
+    return LINK_REWRITE_RULES
 
 try:
     import qrcode  # type: ignore
@@ -266,7 +318,7 @@ def rewrite_subscription_link(
     rules: dict[str, LinkRewriteRule] | None = None,
     resolver=resolve_host_ip,
 ) -> str:
-    rules = LINK_REWRITE_RULES if rules is None else rules
+    rules = current_link_rewrite_rules() if rules is None else rules
     if not rules:
         return link
 
@@ -298,9 +350,10 @@ def rewrite_subscription_link(
     return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, query, parsed.fragment))
 
 def rewrite_subscription_lines(lines: list[str]) -> list[str]:
-    if not LINK_REWRITE_RULES:
+    rules = current_link_rewrite_rules()
+    if not rules:
         return lines
-    return [rewrite_subscription_link(ln) for ln in lines]
+    return [rewrite_subscription_link(ln, rules) for ln in lines]
 
 def parse_userinfo_one(h: str):
     # upload=...; download=...; total=...

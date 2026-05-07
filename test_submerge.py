@@ -1,4 +1,6 @@
+import json
 import os
+import tempfile
 import unittest
 from urllib.parse import parse_qsl, urlparse
 
@@ -10,6 +12,33 @@ import submerge  # noqa: E402
 
 
 class LinkRewriteTests(unittest.TestCase):
+    def setUp(self):
+        self._rewrite_state = (
+            submerge.SUB_LINK_REWRITES_FILE,
+            dict(submerge.LINK_REWRITE_RULES),
+            submerge.LINK_REWRITE_FILE_SIG,
+            submerge.LINK_REWRITE_LAST_ERROR,
+        )
+
+    def tearDown(self):
+        (
+            submerge.SUB_LINK_REWRITES_FILE,
+            submerge.LINK_REWRITE_RULES,
+            submerge.LINK_REWRITE_FILE_SIG,
+            submerge.LINK_REWRITE_LAST_ERROR,
+        ) = self._rewrite_state
+
+    def write_rules(self, path, sni):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "primary.example.com": {
+                        "query": {"sni": sni},
+                    }
+                },
+                f,
+            )
+
     def test_rewrites_only_matching_host(self):
         rules = submerge.parse_link_rewrite_rules(
             {
@@ -82,6 +111,40 @@ class LinkRewriteTests(unittest.TestCase):
         )
 
         self.assertEqual(urlparse(out).netloc, "id@198.51.100.7:443")
+
+    def test_rewrite_file_reloads_after_change(self):
+        link = "vless://id@primary.example.com:443?sni=old.example.com&type=tcp#PRIMARY"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "link_rewrites.json")
+            self.write_rules(path, "front-a.example.com")
+
+            submerge.SUB_LINK_REWRITES_FILE = path
+            submerge.LINK_REWRITE_RULES, submerge.LINK_REWRITE_FILE_SIG = submerge.load_link_rewrite_rules()
+
+            first = submerge.rewrite_subscription_link(link)
+            self.write_rules(path, "front-reloaded.example.com")
+            second = submerge.rewrite_subscription_link(link)
+
+        self.assertIn("sni=front-a.example.com", first)
+        self.assertIn("sni=front-reloaded.example.com", second)
+
+    def test_invalid_rewrite_file_keeps_previous_rules(self):
+        link = "vless://id@primary.example.com:443?sni=old.example.com&type=tcp#PRIMARY"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "link_rewrites.json")
+            self.write_rules(path, "front-valid.example.com")
+
+            submerge.SUB_LINK_REWRITES_FILE = path
+            submerge.LINK_REWRITE_RULES, submerge.LINK_REWRITE_FILE_SIG = submerge.load_link_rewrite_rules()
+
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{")
+
+            out = submerge.rewrite_subscription_link(link)
+
+        self.assertIn("sni=front-valid.example.com", out)
 
 
 if __name__ == "__main__":
