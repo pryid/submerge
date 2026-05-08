@@ -1,5 +1,6 @@
 {
   "ru": {
+    "languageName": "Русский",
     "title": "Просмотр подписки (merge)",
     "scan": "Сканируй, чтобы добавить подписку",
     "list": "Список",
@@ -16,6 +17,7 @@
     "fail": "Не удалось"
   },
   "en": {
+    "languageName": "English",
     "title": "Subscription viewer (merge)",
     "scan": "Scan to add subscription",
     "list": "List",

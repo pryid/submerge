@@ -44,7 +44,7 @@ summary::-webkit-details-marker{display:none}
           <h1 id="t">$TITLE</h1>
           <div class="sub">ID: <span style="font-family:ui-monospace,Menlo,Consolas">$SID</span></div>
         </div>
-        <div><select class="lang" id="langSel"><option value="ru">Русский</option><option value="en">English</option></select></div>
+        <div><select class="lang" id="langSel">$LANG_OPTIONS</select></div>
       </div>
 
       <div class="chips">
@@ -53,8 +53,8 @@ summary::-webkit-details-marker{display:none}
       </div>
 
       <div class="actions">
-        <button class="btn" type="button" id="copySub">Copy URL</button>
-        <button class="btn" type="button" id="copyAll">Copy all</button>
+        <button class="btn" type="button" id="copySub"></button>
+        <button class="btn" type="button" id="copyAll"></button>
       </div>
 
       $NOTE
@@ -63,32 +63,34 @@ summary::-webkit-details-marker{display:none}
     <div class="qr">
       $QR
       <div class="sub" style="text-align:center">
-        <div id="scan">Scan to add subscription</div>
+        <div id="scan"></div>
         <div style="margin-top:6px;font-family:ui-monospace,Menlo,Consolas;font-size:12px;word-break:break-all">$SUBURL</div>
       </div>
     </div>
   </div>
 
   <div class="panel">
-    <div class="hd"><div id="listLbl">List</div><div id="hint">click item → copy</div></div>
+    <div class="hd"><div id="listLbl"></div><div id="hint"></div></div>
     <div class="bd" id="list">$ITEMS</div>
   </div>
 
   <details>
-    <summary id="detailsLbl">Merged raw + subscription-userinfo</summary>
+    <summary id="detailsLbl"></summary>
     <pre id="userinfo">$USERINFO</pre>
     <pre id="raw">$RAW</pre>
-    <div class="actions" style="padding:0 14px 14px"><button class="btn" type="button" id="copyRaw">Copy merged RAW</button></div>
+    <div class="actions" style="padding:0 14px 14px"><button class="btn" type="button" id="copyRaw"></button></div>
   </details>
 </div>
 
-<div class="toast" id="toast">Copied</div>
+<div class="toast" id="toast"></div>
 
 <script>
 const SUB_URL = $SUBURL_JS;
 const LINKS = $LINKS;
 const UI = { kind:$KIND, total:$TOTAL, used:$USED, remain:$REMAIN };
 const I18N = $I18N_JSON;
+const LANGS = Object.keys(I18N);
+const FALLBACK_LANG = LANGS[0] || "";
 
 function gb(b){ return (b/1000000000).toFixed(2); }
 function fmt(template, vars){
@@ -98,12 +100,18 @@ function fmt(template, vars){
   });
   return out;
 }
+function strings(lang){
+  return I18N[lang] || I18N[FALLBACK_LANG] || {};
+}
+function tx(t, key){
+  return t[key] || "";
+}
 function remText(lang){
-  const t=I18N[lang]||I18N.en;
-  if (!UI) return t.no;
-  if (UI.kind==="unlimited") return t.unlim;
-  if (UI.kind!=="limited" && UI.kind!=="limited_partial") return t.no;
-  return fmt(t.lim, {remain:gb(UI.remain||0), total:gb(UI.total||0), used:gb(UI.used||0)});
+  const t=strings(lang);
+  if (!UI) return tx(t, "no");
+  if (UI.kind==="unlimited") return tx(t, "unlim");
+  if (UI.kind!=="limited" && UI.kind!=="limited_partial") return tx(t, "no");
+  return fmt(tx(t, "lim"), {remain:gb(UI.remain||0), total:gb(UI.total||0), used:gb(UI.used||0)});
 }
 const byId = (id) => document.getElementById(id);
 const titleEl = byId("t");
@@ -120,16 +128,17 @@ const rawEl = byId("raw");
 const langSel = byId("langSel");
 
 function apply(lang){
-  const t=I18N[lang]||I18N.en;
-  if (titleEl) titleEl.textContent=t.title;
-  if (scanEl) scanEl.textContent=t.scan;
-  if (listLblEl) listLblEl.textContent=t.list;
-  if (hintEl) hintEl.textContent=t.hint;
-  if (detailsLblEl) detailsLblEl.textContent=t.details;
-  if (copySubEl) copySubEl.textContent=t.copyUrl;
-  if (copyAllEl) copyAllEl.textContent=t.copyAll;
-  if (copyRawEl) copyRawEl.textContent=t.copyRaw;
-  if (chipLinksEl) chipLinksEl.textContent=fmt(t.links, {n: LINKS});
+  const t=strings(lang);
+  document.documentElement.lang=lang || FALLBACK_LANG;
+  if (titleEl) titleEl.textContent=tx(t, "title");
+  if (scanEl) scanEl.textContent=tx(t, "scan");
+  if (listLblEl) listLblEl.textContent=tx(t, "list");
+  if (hintEl) hintEl.textContent=tx(t, "hint");
+  if (detailsLblEl) detailsLblEl.textContent=tx(t, "details");
+  if (copySubEl) copySubEl.textContent=tx(t, "copyUrl");
+  if (copyAllEl) copyAllEl.textContent=tx(t, "copyAll");
+  if (copyRawEl) copyRawEl.textContent=tx(t, "copyRaw");
+  if (chipLinksEl) chipLinksEl.textContent=fmt(tx(t, "links"), {n: LINKS});
   if (chipRemainingEl) chipRemainingEl.textContent=remText(lang);
 }
 function toast(msg){
@@ -149,11 +158,26 @@ async function copyText(text){
   try{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.left="-9999px";
        document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok; }catch(_){ return false; }
 }
+function browserLang(){
+  const requested=[];
+  if (Array.isArray(navigator.languages)) requested.push(...navigator.languages);
+  if (navigator.language) requested.push(navigator.language);
+  for (const raw of requested) {
+    const lang=String(raw||"").toLowerCase();
+    const exact=LANGS.find((x)=>x.toLowerCase()===lang);
+    if (exact) return exact;
+    const primary=lang.split("-")[0];
+    const primaryMatch=LANGS.find((x)=>x.toLowerCase()===primary);
+    if (primaryMatch) return primaryMatch;
+  }
+  return FALLBACK_LANG;
+}
 let stored="";
 try { stored=(localStorage.getItem("lang")||"").toLowerCase(); } catch(_) {}
-const auto=(navigator.language||"").toLowerCase().startsWith("ru")?"ru":"en";
+const auto=browserLang();
 if (langSel) {
-  langSel.value=(stored==="ru"||stored==="en")?stored:auto;
+  const storedLang=LANGS.find((x)=>x.toLowerCase()===stored);
+  langSel.value=storedLang || auto;
   apply(langSel.value);
   langSel.addEventListener("change",()=>{
     try { localStorage.setItem("lang",langSel.value); } catch(_) {}
@@ -167,20 +191,20 @@ document.addEventListener("click", async (e)=>{
   if (!(e.target instanceof Element)) return;
   const b=e.target.closest("button.row"); if(!b) return;
   const ok=await copyText(b.getAttribute("data-copy")||"");
-  const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+  const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
 });
 if (copySubEl) copySubEl.addEventListener("click", async ()=>{
-  const ok=await copyText(SUB_URL); const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+  const ok=await copyText(SUB_URL); const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
 });
 if (copyAllEl) copyAllEl.addEventListener("click", async ()=>{
   const items=Array.from(document.querySelectorAll("#list button.row"))
     .map((x)=>x.getAttribute("data-copy")||"")
     .filter(Boolean);
   const ok=items.length>0 ? await copyText(items.join("\n")) : false;
-  const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+  const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
 });
 if (copyRawEl) copyRawEl.addEventListener("click", async ()=>{
   const ok=await copyText((rawEl && rawEl.textContent)||"");
-  const t=I18N[(langSel && langSel.value) || auto]||I18N.en; toast(ok?t.ok:t.fail);
+  const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
 });
 </script></body></html>

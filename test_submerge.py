@@ -4,11 +4,104 @@ import tempfile
 import unittest
 from urllib.parse import parse_qsl, urlparse
 
-os.environ.setdefault("SUB_BASES", "https://a.example")
+_CONFIG_DIR = tempfile.TemporaryDirectory()
+_SUB_BASES_FILE = os.path.join(_CONFIG_DIR.name, "sub_bases.json")
+with open(_SUB_BASES_FILE, "w", encoding="utf-8") as f:
+    json.dump(["https://a.example"], f)
+
+os.environ["SUB_BASES_FILE"] = _SUB_BASES_FILE
+os.environ.pop("SUB_BASES", None)
 os.environ.pop("SUB_LINK_REWRITES", None)
 os.environ.pop("SUB_LINK_REWRITES_FILE", None)
 
 import submerge  # noqa: E402
+
+
+class SubBasesTests(unittest.TestCase):
+    def setUp(self):
+        self._bases_state = (
+            submerge.SUB_BASES_FILE,
+            list(submerge.SUB_BASES),
+            submerge.SUB_BASES_FILE_SIG,
+            submerge.SUB_BASES_LAST_ERROR,
+        )
+
+    def tearDown(self):
+        (
+            submerge.SUB_BASES_FILE,
+            submerge.SUB_BASES,
+            submerge.SUB_BASES_FILE_SIG,
+            submerge.SUB_BASES_LAST_ERROR,
+        ) = self._bases_state
+
+    def write_bases(self, path, bases):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(bases, f)
+
+    def test_parse_sub_bases_strips_trailing_slashes(self):
+        self.assertEqual(
+            submerge.parse_sub_bases([" https://a.example/ ", "http://b.example//"]),
+            ["https://a.example", "http://b.example"],
+        )
+
+    def test_parse_sub_bases_rejects_empty_list(self):
+        with self.assertRaises(ValueError):
+            submerge.parse_sub_bases([])
+
+    def test_sub_bases_file_reloads_after_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "sub_bases.json")
+            self.write_bases(path, ["https://first.example"])
+
+            submerge.SUB_BASES_FILE = path
+            submerge.SUB_BASES, submerge.SUB_BASES_FILE_SIG = submerge.load_sub_bases()
+
+            first = submerge.current_sub_bases()
+            self.write_bases(path, ["https://second.example", "https://third.example"])
+            second = submerge.current_sub_bases()
+
+        self.assertEqual(first, ["https://first.example"])
+        self.assertEqual(second, ["https://second.example", "https://third.example"])
+
+    def test_invalid_sub_bases_file_keeps_previous_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "sub_bases.json")
+            self.write_bases(path, ["https://valid.example"])
+
+            submerge.SUB_BASES_FILE = path
+            submerge.SUB_BASES, submerge.SUB_BASES_FILE_SIG = submerge.load_sub_bases()
+
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{")
+
+            out = submerge.current_sub_bases()
+
+        self.assertEqual(out, ["https://valid.example"])
+
+
+class I18nTests(unittest.TestCase):
+    def setUp(self):
+        self._i18n_file = submerge.I18N_FILE
+
+    def tearDown(self):
+        submerge.I18N_FILE = self._i18n_file
+
+    def write_i18n(self, path, data):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+    def test_load_i18n_accepts_arbitrary_locale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "web_i18n.json")
+            self.write_i18n(path, {"de": {"languageName": "Deutsch", "title": "Titel"}})
+
+            submerge.I18N_FILE = path
+            i18n = submerge.load_i18n()
+            options = submerge.render_language_options(i18n)
+
+        self.assertEqual(i18n["de"]["title"], "Titel")
+        self.assertIn('value="de"', options)
+        self.assertIn("Deutsch", options)
 
 
 class LinkRewriteTests(unittest.TestCase):

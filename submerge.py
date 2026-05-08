@@ -23,10 +23,7 @@ def env(name: str, default: str | None = None) -> str:
         return default
     raise SystemExit(f"Missing env: {name}")
 
-SUB_BASES = [x.strip().rstrip("/") for x in env("SUB_BASES").split(",") if x.strip()]
-if not SUB_BASES:
-    raise SystemExit("SUB_BASES is empty")
-
+SUB_BASES_FILE = env("SUB_BASES_FILE")
 LISTEN_HOST = env("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(env("LISTEN_PORT", "18080"))
 TIMEOUT = float(env("TIMEOUT", "10"))
@@ -57,6 +54,11 @@ class LinkRewriteRule:
     query: dict[str, str] = field(default_factory=dict)
 
 
+def config_file_signature(path: str) -> tuple[int, int, int]:
+    st = os.stat(path)
+    return (int(st.st_ino), int(st.st_size), int(st.st_mtime_ns))
+
+
 def config_bool(value, default: bool = False) -> bool:
     if value is None:
         return default
@@ -71,6 +73,78 @@ def config_bool(value, default: bool = False) -> bool:
         if v in ("0", "false", "no", "off", ""):
             return False
     raise ValueError(f"Invalid boolean value in link rewrites: {value!r}")
+
+
+def parse_sub_bases(data, source: str = "SUB_BASES_FILE") -> list[str]:
+    if not isinstance(data, list):
+        raise ValueError(f"{source} must be a JSON array")
+
+    bases: list[str] = []
+    for idx, raw_base in enumerate(data):
+        if not isinstance(raw_base, str):
+            raise ValueError(f"{source}[{idx}] must be a string")
+        base = raw_base.strip().rstrip("/")
+        if not base:
+            raise ValueError(f"{source}[{idx}] is empty")
+
+        parsed = urlparse(base)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(f"{source}[{idx}] must be an http(s) base URL")
+        bases.append(base)
+
+    if not bases:
+        raise ValueError(f"{source} must contain at least one source")
+    return bases
+
+
+def load_sub_bases_file(path: str) -> tuple[list[str], tuple[int, int, int]]:
+    sig = config_file_signature(path)
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return parse_sub_bases(data, path), sig
+
+
+def load_sub_bases() -> tuple[list[str], tuple[int, int, int]]:
+    try:
+        return load_sub_bases_file(SUB_BASES_FILE)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        raise SystemExit(f"Cannot read SUB_BASES_FILE: {e}") from e
+
+
+SUB_BASES, SUB_BASES_FILE_SIG = load_sub_bases()
+SUB_BASES_LAST_ERROR: str | None = None
+
+
+def warn_sub_bases_reload_error(message: str):
+    global SUB_BASES_LAST_ERROR
+    if message == SUB_BASES_LAST_ERROR:
+        return
+    SUB_BASES_LAST_ERROR = message
+    print(f"submerge: keeping previous subscription sources: {message}", file=sys.stderr, flush=True)
+
+
+def current_sub_bases() -> list[str]:
+    global SUB_BASES, SUB_BASES_FILE_SIG, SUB_BASES_LAST_ERROR
+
+    try:
+        sig = config_file_signature(SUB_BASES_FILE)
+    except OSError as e:
+        warn_sub_bases_reload_error(f"cannot stat {SUB_BASES_FILE}: {e}")
+        return SUB_BASES
+
+    if sig == SUB_BASES_FILE_SIG:
+        return SUB_BASES
+
+    try:
+        bases, loaded_sig = load_sub_bases_file(SUB_BASES_FILE)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        warn_sub_bases_reload_error(f"cannot reload {SUB_BASES_FILE}: {e}")
+        return SUB_BASES
+
+    SUB_BASES = bases
+    SUB_BASES_FILE_SIG = loaded_sig
+    SUB_BASES_LAST_ERROR = None
+    return SUB_BASES
 
 
 def normalize_host(host: str) -> str:
@@ -128,13 +202,8 @@ def parse_link_rewrite_rules_json(raw: str, source: str) -> dict[str, LinkRewrit
     return parse_link_rewrite_rules(data, source)
 
 
-def link_rewrite_file_signature(path: str) -> tuple[int, int, int]:
-    st = os.stat(path)
-    return (int(st.st_ino), int(st.st_size), int(st.st_mtime_ns))
-
-
 def load_link_rewrite_rules_file(path: str) -> tuple[dict[str, LinkRewriteRule], tuple[int, int, int]]:
-    sig = link_rewrite_file_signature(path)
+    sig = config_file_signature(path)
     with open(path, "r", encoding="utf-8") as f:
         raw = f.read()
     return parse_link_rewrite_rules_json(raw, path), sig
@@ -175,7 +244,7 @@ def current_link_rewrite_rules() -> dict[str, LinkRewriteRule]:
         return LINK_REWRITE_RULES
 
     try:
-        sig = link_rewrite_file_signature(SUB_LINK_REWRITES_FILE)
+        sig = config_file_signature(SUB_LINK_REWRITES_FILE)
     except OSError as e:
         warn_link_rewrite_reload_error(f"cannot stat {SUB_LINK_REWRITES_FILE}: {e}")
         return LINK_REWRITE_RULES
@@ -496,13 +565,10 @@ def merge_from_all(sub_id: str):
       (status, body, headers_for_passthru, merged_lines_or_None, note, headers_list_for_userinfo)
     """
     results = []
-    any_network = False
 
-    for base in SUB_BASES:
+    for base in current_sub_bases():
         url = f"{base}/sub/{sub_id}"
         code, body, hdrs = fetch(url)
-        if code == 0:
-            any_network = True
         results.append((base, code, body, hdrs))
 
     ok = [(b, c, body, h) for (b, c, body, h) in results if c == 200 and body.strip()]
@@ -550,41 +616,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HTML_TEMPLATE_FILE = env("HTML_TEMPLATE_FILE", os.path.join(BASE_DIR, "web_template.html"))
 I18N_FILE = env("I18N_FILE", os.path.join(BASE_DIR, "web_i18n.json"))
 
-DEFAULT_I18N = {
-    "ru": {
-        "title": "Просмотр подписки (merge)",
-        "scan": "Сканируй, чтобы добавить подписку",
-        "list": "Список",
-        "hint": "клик по пункту → копировать",
-        "details": "Объединенный RAW + subscription-userinfo",
-        "copyUrl": "Скопировать URL",
-        "copyAll": "Скопировать всё",
-        "copyRaw": "Скопировать merged RAW",
-        "links": "Ссылок: {n}",
-        "no": "Осталось: —",
-        "unlim": "Осталось: безлимит",
-        "lim": "Осталось: {remain} GB из {total} GB (исп.: {used} GB)",
-        "ok": "Скопировано",
-        "fail": "Не удалось",
-    },
-    "en": {
-        "title": "Subscription viewer (merge)",
-        "scan": "Scan to add subscription",
-        "list": "List",
-        "hint": "click item → copy",
-        "details": "Merged raw + subscription-userinfo",
-        "copyUrl": "Copy URL",
-        "copyAll": "Copy all",
-        "copyRaw": "Copy merged RAW",
-        "links": "Links: {n}",
-        "no": "Remaining: —",
-        "unlim": "Remaining: unlimited",
-        "lim": "Remaining: {remain} GB of {total} GB (used: {used} GB)",
-        "ok": "Copied",
-        "fail": "Copy failed",
-    },
-}
-
 
 def load_html_template() -> Template:
     with open(HTML_TEMPLATE_FILE, "r", encoding="utf-8") as f:
@@ -592,21 +623,37 @@ def load_html_template() -> Template:
 
 
 def load_i18n() -> dict:
-    out = {lang: dict(values) for lang, values in DEFAULT_I18N.items()}
-    try:
-        with open(I18N_FILE, "r", encoding="utf-8") as f:
-            custom = json.load(f)
-        if not isinstance(custom, dict):
-            return out
-        for lang, values in custom.items():
-            if lang not in out or not isinstance(values, dict):
-                continue
-            for key, value in values.items():
-                if isinstance(value, str):
-                    out[lang][key] = value
-    except Exception:
-        return out
+    with open(I18N_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{I18N_FILE} must be a JSON object")
+
+    out = {}
+    for raw_lang, values in data.items():
+        lang = str(raw_lang).strip()
+        if not lang:
+            raise ValueError(f"{I18N_FILE} contains an empty locale")
+        if not isinstance(values, dict):
+            raise ValueError(f"{I18N_FILE}[{raw_lang!r}] must be an object")
+
+        strings = {}
+        for key, value in values.items():
+            if isinstance(value, str):
+                strings[str(key)] = value
+        if strings:
+            out[lang] = strings
+
+    if not out:
+        raise ValueError(f"{I18N_FILE} must contain at least one locale")
     return out
+
+
+def render_language_options(i18n: dict) -> str:
+    items = []
+    for lang, values in i18n.items():
+        label = values.get("languageName") or lang
+        items.append(f'<option value="{html.escape(lang)}">{html.escape(label)}</option>')
+    return "\n".join(items)
 
 
 def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg, note: str | None):
@@ -639,6 +686,7 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
         USERINFO=html.escape(userinfo_agg["header"]),
         LINKS=str(len(lines) if lines else 0),
         I18N_JSON=json.dumps(i18n, ensure_ascii=False),
+        LANG_OPTIONS=render_language_options(i18n),
         KIND=json.dumps(
             userinfo_agg["kind"]
             if userinfo_agg["kind"] in ("unlimited", "limited", "limited_partial")

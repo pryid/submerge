@@ -7,7 +7,7 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 
 ## What It Does
 
-- Requests `/sub/<id>` from each upstream in `SUB_BASES`
+- Requests `/sub/<id>` from each upstream in `SUB_BASES_FILE`
 - Merges and de-duplicates links (when upstream response is plain base64 list)
 - Aggregates `Subscription-Userinfo` across successful upstreams
 - Returns raw response for non-browser clients
@@ -17,7 +17,8 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 
 - `submerge.py` - main service
 - `web_template.html` - HTML/CSS/JS template (loaded on every request)
-- `web_i18n.json` - UI localization dictionary (loaded on every request)
+- `web_i18n.json` - UI localization dictionary and language list (loaded on every request)
+- `sub_bases.example.json` - example upstream source list
 - `submerge.container` - example Quadlet container unit
 
 ## Requirements
@@ -30,8 +31,7 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 
 Environment variables:
 
-- `SUB_BASES` (required): comma-separated upstream base URLs, example:
-  - `https://a.example.com,https://b.example.com`
+- `SUB_BASES_FILE` (required): path to a JSON file with upstream base URLs
 - `LISTEN_HOST` (default: `0.0.0.0`)
 - `LISTEN_PORT` (default: `18080`)
 - `TIMEOUT` (default: `10`)
@@ -42,6 +42,27 @@ Environment variables:
 - `SUB_REWRITE_DNS_TTL` (default: `300`): DNS cache TTL in seconds for host rewrites
 - `HTML_TEMPLATE_FILE` (default: `./web_template.html` next to `submerge.py`)
 - `I18N_FILE` (default: `./web_i18n.json` next to `submerge.py`)
+
+## Subscription Sources
+
+Sources are configured only through `SUB_BASES_FILE`. The old comma-separated `SUB_BASES` environment variable is not supported.
+
+Example `/opt/submerge/sub_bases.json`:
+
+```json
+[
+  "https://de.example.com",
+  "https://fr.example.com"
+]
+```
+
+Then add this to the container config:
+
+```ini
+Environment=SUB_BASES_FILE=/opt/submerge/sub_bases.json
+```
+
+Changes to this JSON file are picked up on the next subscription request without restarting the service. If the file becomes invalid while the service is running, Submerge keeps the last valid source list and logs a warning.
 
 ## Link Rewrites
 
@@ -95,12 +116,13 @@ sudo systemctl cat submerge.service | grep SUB_LINK_REWRITES
 
 If the rewrite JSON file becomes invalid while the service is running, Submerge keeps the last valid rewrite rules and logs a warning.
 
-Keep deployment-specific rewrite files out of git. The repository ignores `link_rewrites.json` for this reason.
+Keep deployment-specific source and rewrite files out of git. The repository ignores `sub_bases.json` and `link_rewrites.json` for this reason.
 
 ## Run Locally (Python)
 
 ```bash
-export SUB_BASES="https://a.example.com,https://b.example.com"
+cp sub_bases.example.json sub_bases.json
+export SUB_BASES_FILE="$PWD/sub_bases.json"
 export LISTEN_PORT=18080
 python3 -m pip install qrcode || true
 python3 submerge.py
@@ -117,6 +139,7 @@ This repository already includes `submerge.container`.
 ```bash
 sudo mkdir -p /opt/submerge
 sudo cp submerge.py web_template.html web_i18n.json /opt/submerge/
+sudo cp sub_bases.example.json /opt/submerge/sub_bases.json
 ```
 
 2. Install the Quadlet source file (adjust path depending on your setup), then reload generators and start the generated service:
@@ -176,9 +199,11 @@ sudo nginx -t && sudo systemctl reload nginx
 ## Live Editing
 
 - Changes in `web_template.html` and `web_i18n.json` are picked up on page refresh (no service restart needed).
+- UI locales are not embedded in `submerge.py`; add or edit languages in `web_i18n.json`.
+- Changes in the file referenced by `SUB_BASES_FILE` are picked up on the next subscription request.
 - Changes in `submerge.py` require service restart.
 - Changes in the file referenced by `SUB_LINK_REWRITES_FILE` are picked up on the next subscription request.
-- Changes in `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the Quadlet container file require service restart.
+- Changing the value of `SUB_BASES_FILE`, `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the Quadlet container file requires service restart.
 
 ## Notes
 

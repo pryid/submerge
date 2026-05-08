@@ -9,7 +9,7 @@ Pod=main.pod
 AutoUpdate=registry
 Volume=/opt/submerge:/opt/submerge:Z
 
-Environment=SUB_BASES=https://de.example.com,https://fr.example.com
+Environment=SUB_BASES_FILE=/opt/submerge/sub_bases.json
 Environment=LISTEN_HOST=0.0.0.0
 Environment=LISTEN_PORT=18080
 Environment=TIMEOUT=10

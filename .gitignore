@@ -28,5 +28,6 @@ Desktop.ini
 .ruff_cache/
 .mypy_cache/
 
-# Local deployment config with real rewrite targets
+# Local deployment config with real upstreams and rewrite targets
+sub_bases.json
 link_rewrites.json
