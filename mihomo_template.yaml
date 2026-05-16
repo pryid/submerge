@@ -1,0 +1,268 @@
+# ${PROFILE_TITLE}
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: true
+unified-delay: true
+tcp-concurrent: true
+find-process-mode: strict
+global-client-fingerprint: chrome
+external-controller: 127.0.0.1:9090
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.lan"
+    - "*.local"
+    - "localhost.ptlogin2.qq.com"
+  default-nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://8.8.8.8/dns-query
+  fallback:
+    - tls://1.1.1.1
+    - tls://8.8.8.8
+
+proxy-providers:
+  subscription:
+    type: http
+    url: '${PROVIDER_URL}'
+    path: ./proxy_providers/provider-${SUB_ID}.txt
+    interval: 3600
+    health-check:
+      enable: true
+      url: https://cp.cloudflare.com/generate_204
+      interval: 300
+      timeout: 5000
+      lazy: true
+
+proxy-groups:
+  - name: 🎛 1. Режим работы
+    type: select
+    proxies:
+      - 🌍 2. Выбор локации
+      - 📦 Всегда через прокси
+      - DIRECT
+      - REJECT
+      - Всё через прокси ↪️
+      - В обход ↗️ (Только ПК)
+      - Низкий пинг 🌀 (Не для игр)
+      - Самый стабильный 🤞 (Не для игр)
+      - Выбрать вручную
+
+  - name: 🌍 2. Выбор локации
+    type: select
+    proxies:
+      - Низкий пинг 🌀 (Не для игр)
+      - Самый стабильный 🤞 (Не для игр)
+      - Выбрать вручную
+      - Всё через прокси ↪️
+
+  - name: Всё через прокси ↪️
+    type: select
+    use:
+      - subscription
+
+  - name: В обход ↗️ (Только ПК)
+    type: select
+    proxies:
+      - DIRECT
+      - 🌍 2. Выбор локации
+      - 📦 Всегда через прокси
+
+  - name: 📦 Всегда через прокси
+    type: select
+    proxies:
+      - 🌍 2. Выбор локации
+      - Низкий пинг 🌀 (Не для игр)
+      - Самый стабильный 🤞 (Не для игр)
+      - Выбрать вручную
+
+  - name: Низкий пинг 🌀 (Не для игр)
+    type: url-test
+    use:
+      - subscription
+    url: https://cp.cloudflare.com/generate_204
+    interval: 300
+    tolerance: 50
+    lazy: true
+
+  - name: Самый стабильный 🤞 (Не для игр)
+    type: fallback
+    use:
+      - subscription
+    url: https://cp.cloudflare.com/generate_204
+    interval: 300
+    lazy: true
+
+  - name: Выбрать вручную
+    type: select
+    use:
+      - subscription
+
+rule-providers:
+  category-ru:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 3600
+    url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ru.yaml
+    path: ./ruleset/category-ru.yaml
+  category-ads-all:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 3600
+    url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ads-all.yaml
+    path: ./ruleset/category-ads-all.yaml
+  tracker:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 3600
+    url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tracker.yaml
+    path: ./ruleset/tracker.yaml
+  private:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.yaml
+    path: ./ruleset/private.yaml
+
+rules:
+  - PROCESS-NAME,Transmission,DIRECT
+  - PROCESS-NAME,qBittorrent,DIRECT
+  - PROCESS-NAME,uTorrent,DIRECT
+  - PROCESS-NAME,Deluge,DIRECT
+  - PROCESS-NAME,WebTorrent,DIRECT
+  - PROCESS-NAME,PicoTorrent.exe,DIRECT
+  - RULE-SET,tracker,REJECT
+  - DOMAIN,cp.cloudflare.com,DIRECT
+  - DOMAIN-SUFFIX,msftconnecttest.com,DIRECT
+  - DOMAIN-SUFFIX,msftncsi.com,DIRECT
+  - DOMAIN-SUFFIX,captive.apple.com,DIRECT
+  - DOMAIN,detectportal.firefox.com,DIRECT
+  - DOMAIN-SUFFIX,networkcheck.kde.org,DIRECT
+  - RULE-SET,private,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,224.0.0.0/4,DIRECT,no-resolve
+  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+  - RULE-SET,category-ads-all,REJECT
+  - DOMAIN-SUFFIX,tribute.tg,🌍 2. Выбор локации
+  - PROCESS-NAME,com.newword.medved.bbb,DIRECT
+  - PROCESS-NAME,com.avito.android,DIRECT
+  - PROCESS-NAME,ru.alfabank.mobile.android,DIRECT
+  - PROCESS-NAME,ru.beeline.services,DIRECT
+  - PROCESS-NAME,ru.vkusvill,DIRECT
+  - PROCESS-NAME,com.apegroup.mcdonaldsrussia,DIRECT
+  - PROCESS-NAME,ru.altarix.mos.pgu,DIRECT
+  - PROCESS-NAME,com.deliveryclub,DIRECT
+  - PROCESS-NAME,ru.yandex.direct,DIRECT
+  - PROCESS-NAME,ru.dodopizza.app,DIRECT
+  - PROCESS-NAME,com.sebbia.delivery.client,DIRECT
+  - PROCESS-NAME,ru.smmd.superdelivery,DIRECT
+  - PROCESS-NAME,com.programmisty.emiasapp,DIRECT
+  - PROCESS-NAME,ru.kinopoisk,DIRECT
+  - PROCESS-NAME,ru.mts.mtstv,DIRECT
+  - PROCESS-NAME,ru.tander.magnit,DIRECT
+  - PROCESS-NAME,ru.beru.android,DIRECT
+  - PROCESS-NAME,mnogomesta.app,DIRECT
+  - PROCESS-NAME,com.gnivts.selfemployed,DIRECT
+  - PROCESS-NAME,ru.perekrestok.app,DIRECT
+  - PROCESS-NAME,com.octopod.russianpost.client.android,DIRECT
+  - PROCESS-NAME,ru.ozon.ozon_pvz,DIRECT
+  - PROCESS-NAME,ru.pyaterochka.app.browser,DIRECT
+  - PROCESS-NAME,ru.rzd.pass,DIRECT
+  - PROCESS-NAME,ru.sbcs.store,DIRECT
+  - PROCESS-NAME,ru.sberbankmobile,DIRECT
+  - PROCESS-NAME,com.idamob.tinkoff.android,DIRECT
+  - PROCESS-NAME,com.yandex.searchapp,DIRECT
+  - PROCESS-NAME,ru.yandex.disk,DIRECT
+  - PROCESS-NAME,ru.foodfox.client,DIRECT
+  - PROCESS-NAME,ru.foodfox.vendor,DIRECT
+  - PROCESS-NAME,ru.yandex.yandexmaps,DIRECT
+  - PROCESS-NAME,ru.yandex.music,DIRECT
+  - PROCESS-NAME,ru.yandex.yandexnavi,DIRECT
+  - PROCESS-NAME,ru.yandex.taximeter,DIRECT
+  - PROCESS-NAME,com.yandex.bluecollars,DIRECT
+  - PROCESS-NAME,ru.yandex.taxi,DIRECT
+  - PROCESS-NAME,ru.yandex.key,DIRECT
+  - PROCESS-NAME,com.logistic.sdek,DIRECT
+  - PROCESS-NAME,ru.yandex.uber,DIRECT
+  - PROCESS-NAME,ru.nspk.mirpay,DIRECT
+  - PROCESS-NAME,ru.ozon.app.android,DIRECT
+  - PROCESS-NAME,ru.ozon.select,DIRECT
+  - PROCESS-NAME,ru.kfc.kfc_delivery,DIRECT
+  - PROCESS-NAME,live.vkplay.app,DIRECT
+  - PROCESS-NAME,com.vk.calls,DIRECT
+  - PROCESS-NAME,com.vk.love,DIRECT
+  - PROCESS-NAME,com.vk.im,DIRECT
+  - PROCESS-NAME,com.uma.musicvk,DIRECT
+  - PROCESS-NAME,ru.wb.courier,DIRECT
+  - PROCESS-NAME,ru.wildberries.team,DIRECT
+  - PROCESS-NAME,wb.partners,DIRECT
+  - PROCESS-NAME,com.wbextdelivery,DIRECT
+  - PROCESS-NAME,ru.wb.guru,DIRECT
+  - PROCESS-NAME,com.wildberries.ru,DIRECT
+  - PROCESS-NAME,ru.papajohns.app,DIRECT
+  - PROCESS-NAME,ru.myspar,DIRECT
+  - PROCESS-NAME,ru.more.play,DIRECT
+  - PROCESS-NAME,ru.megamarket.marketplace,DIRECT
+  - PROCESS-NAME,ru.aliexpress.buyer,DIRECT
+  - PROCESS-NAME,ru.mail.mailapp,DIRECT
+  - PROCESS-NAME,ru.kaiten.app,DIRECT
+  - PROCESS-NAME,ru.yandex.telemost,DIRECT
+  - PROCESS-NAME,ru.yandex.weatherplugin,DIRECT
+  - PROCESS-NAME,ru.oneme.app,DIRECT
+  - PROCESS-NAME,ru.instamart,DIRECT
+  - PROCESS-NAME,ru.dublgis.dgismobile,DIRECT
+  - PROCESS-NAME,com.xiaomi.smarthome,DIRECT
+  - RULE-SET,category-ru,DIRECT
+  - DOMAIN-SUFFIX,ru,DIRECT
+  - GEOIP,ru,DIRECT
+  - PROCESS-NAME,firefox.exe,📦 Всегда через прокси
+  - PROCESS-NAME,chrome.exe,📦 Всегда через прокси
+  - PROCESS-NAME,browser.exe,📦 Всегда через прокси
+  - PROCESS-NAME,opera.exe,📦 Всегда через прокси
+  - PROCESS-NAME,samsunginternet.exe,📦 Всегда через прокси
+  - PROCESS-NAME,msedgewebview2.exe,📦 Всегда через прокси
+  - PROCESS-NAME,firefox,📦 Всегда через прокси
+  - PROCESS-NAME,Google Chrome,📦 Всегда через прокси
+  - PROCESS-NAME,Google Chrome Helper,📦 Всегда через прокси
+  - PROCESS-NAME,Yandex Browser,📦 Всегда через прокси
+  - PROCESS-NAME,Opera,📦 Всегда через прокси
+  - PROCESS-NAME,Safari,📦 Всегда через прокси
+  - PROCESS-NAME,Arc,📦 Всегда через прокси
+  - PROCESS-NAME,Telegram.exe,📦 Всегда через прокси
+  - PROCESS-NAME,Discord.exe,📦 Всегда через прокси
+  - PROCESS-NAME,Telegram,📦 Всегда через прокси
+  - PROCESS-NAME,Telegram Lite,📦 Всегда через прокси
+  - PROCESS-NAME,Discord,📦 Всегда через прокси
+  - PROCESS-NAME,Discord Helper,📦 Всегда через прокси
+  - PROCESS-NAME,Spotify.exe,📦 Всегда через прокси
+  - PROCESS-NAME,spotify.exe,📦 Всегда через прокси
+  - PROCESS-NAME,Spotify,📦 Всегда через прокси
+  - PROCESS-NAME,Claude Setup.exe,📦 Всегда через прокси
+  - PROCESS-NAME,claude.exe,📦 Всегда через прокси
+  - PROCESS-NAME,cowork-svc.exe,📦 Всегда через прокси
+  - PROCESS-NAME,Claude,📦 Всегда через прокси
+  - PROCESS-NAME,Claude Helper,📦 Всегда через прокси
+  - MATCH,🎛 1. Режим работы

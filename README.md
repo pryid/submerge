@@ -3,6 +3,7 @@
 Submerge is a small HTTP service that merges subscription responses from multiple upstream servers and serves:
 
 - raw merged output for clients
+- Mihomo/Clash-compatible YAML profiles for Clash.Meta, Mihomo, Clash Verge, Koala, Stash, and similar clients
 - a browser-friendly HTML page with QR, copy actions, and traffic summary
 
 ## What It Does
@@ -11,6 +12,7 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 - Merges and de-duplicates links (when upstream response is plain base64 list)
 - Aggregates `Subscription-Userinfo` across successful upstreams
 - Returns raw response for non-browser clients
+- Returns a full Mihomo YAML profile for Mihomo-like user agents, with nodes loaded through the merged base64 provider URL
 - Renders an HTML viewer for browser requests
 
 ## Project Files
@@ -18,7 +20,9 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 - `submerge.py` - main service
 - `web_template.html` - HTML/CSS/JS template (loaded on every request)
 - `web_i18n.json` - UI localization dictionary and language list (loaded on every request)
+- `mihomo_template.yaml` - Mihomo/Clash YAML template (loaded on every YAML request)
 - `sub_bases.example.json` - example upstream source list
+- `test_formats.sh` - live endpoint compatibility smoke test
 - `submerge.container` - example Quadlet container unit
 
 ## Requirements
@@ -40,6 +44,10 @@ Environment variables:
 - `SUB_LINK_REWRITES` (optional): JSON object with link rewrite rules
 - `SUB_LINK_REWRITES_FILE` (optional): path to a JSON file with link rewrite rules; takes precedence over `SUB_LINK_REWRITES`
 - `SUB_REWRITE_DNS_TTL` (default: `300`): DNS cache TTL in seconds for host rewrites
+- `MIHOMO_AUTO` (default: `1`): automatically serve Mihomo YAML to recognized Clash/Mihomo/Koala/Stash user agents
+- `MIHOMO_TEMPLATE_FILE` (default: `./mihomo_template.yaml` next to `submerge.py`)
+- `MIHOMO_PROFILE_TITLE` (default: `${PAGE_TITLE} Mihomo`)
+- `MIHOMO_UPDATE_INTERVAL` (default: `6`): value for the `Profile-Update-Interval` response header
 - `HTML_TEMPLATE_FILE` (default: `./web_template.html` next to `submerge.py`)
 - `I18N_FILE` (default: `./web_i18n.json` next to `submerge.py`)
 
@@ -138,7 +146,7 @@ This repository already includes `submerge.container`.
 
 ```bash
 sudo mkdir -p /opt/submerge
-sudo cp submerge.py web_template.html web_i18n.json /opt/submerge/
+sudo cp submerge.py web_template.html web_i18n.json mihomo_template.yaml /opt/submerge/
 sudo cp sub_bases.example.json /opt/submerge/sub_bases.json
 ```
 
@@ -167,6 +175,8 @@ location ~ ^/sub-merge/([A-Za-z0-9_-]+)$ {
     proxy_pass http://127.0.0.1:18080/sub/$1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header Range $http_range;
     proxy_set_header If-Range $http_if_range;
     proxy_redirect off;
@@ -183,6 +193,8 @@ location @nginx_404 {
 
 The `limit_req` line requires a matching `limit_req_zone` in the nginx `http` context.
 
+The query string must be preserved. With the `proxy_pass` form above, `/sub-merge/<id>?format=base64` reaches the service as `/sub/<id>?format=base64`.
+
 Then reload nginx:
 
 ```bash
@@ -195,6 +207,12 @@ sudo nginx -t && sudo systemctl reload nginx
   - `https://your-domain/sub-merge/<id>`
 - Client/raw output:
   - request same URL with non-browser client (for example `curl`)
+- Force raw output:
+  - `https://your-domain/sub-merge/<id>?format=base64`
+- Force Mihomo YAML:
+  - `https://your-domain/sub-merge/<id>?format=mihomo`
+- Live smoke test:
+  - `./test_formats.sh https://your-domain/sub-merge/<id>`
 
 ## Live Editing
 
@@ -209,3 +227,4 @@ sudo nginx -t && sudo systemctl reload nginx
 
 - If an upstream returns a non-plain format, Submerge falls back to the first successful upstream response as-is.
 - If all upstreams fail on network level, service returns `502`.
+- Mihomo YAML does not parse or embed node links. Its `proxy-providers.<provider>.url` points back to the public endpoint with `?format=base64`, so the existing merge, de-duplication, userinfo aggregation, and link rewrites stay on the raw provider path.

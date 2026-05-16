@@ -104,6 +104,67 @@ class I18nTests(unittest.TestCase):
         self.assertIn("Deutsch", options)
 
 
+class FormatRoutingTests(unittest.TestCase):
+    def setUp(self):
+        self._mihomo_auto = submerge.MIHOMO_AUTO
+        self._mihomo_template_file = submerge.MIHOMO_TEMPLATE_FILE
+        self._mihomo_profile_title = submerge.MIHOMO_PROFILE_TITLE
+
+    def tearDown(self):
+        submerge.MIHOMO_AUTO = self._mihomo_auto
+        submerge.MIHOMO_TEMPLATE_FILE = self._mihomo_template_file
+        submerge.MIHOMO_PROFILE_TITLE = self._mihomo_profile_title
+
+    def test_response_format_explicit_base64_beats_mihomo_user_agent(self):
+        headers = {"User-Agent": "mihomo/1.19.0"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo?format=base64"), "base64")
+
+    def test_response_format_explicit_mihomo_beats_browser_accept(self):
+        headers = {"Accept": "text/html", "User-Agent": "Mozilla/5.0"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo?format=mihomo"), "mihomo")
+
+    def test_response_format_browser_html(self):
+        headers = {"Accept": "text/html"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo"), "html")
+
+    def test_response_format_mihomo_ua_when_auto_enabled(self):
+        submerge.MIHOMO_AUTO = True
+        headers = {"User-Agent": "Koala"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo"), "mihomo")
+
+    def test_response_format_mihomo_ua_ignored_when_auto_disabled(self):
+        submerge.MIHOMO_AUTO = False
+        headers = {"User-Agent": "Clash.Meta"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo"), "base64")
+
+    def test_public_url_with_query(self):
+        headers = {"Host": "example.com", "X-Forwarded-Proto": "https"}
+
+        self.assertEqual(
+            submerge.public_url_with_query(headers, "abc_123", {"format": "base64"}),
+            "https://example.com/sub-merge/abc_123?format=base64",
+        )
+
+    def test_render_mihomo_config_uses_safe_id_and_provider_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "mihomo.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("url: '${PROVIDER_URL}'\npath: provider-${SUB_ID}.txt\n# ${PROFILE_TITLE}\n")
+
+            submerge.MIHOMO_TEMPLATE_FILE = path
+            submerge.MIHOMO_PROFILE_TITLE = "Test Profile"
+            out = submerge.render_mihomo_config("bad/id", "https://example.com/sub-merge/bad_id?format=base64")
+
+        self.assertIn("url: 'https://example.com/sub-merge/bad_id?format=base64'", out)
+        self.assertIn("path: provider-bad_id.txt", out)
+        self.assertIn("# Test Profile", out)
+
+
 class LinkRewriteTests(unittest.TestCase):
     def setUp(self):
         self._rewrite_state = (

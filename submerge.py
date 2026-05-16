@@ -23,6 +23,7 @@ def env(name: str, default: str | None = None) -> str:
         return default
     raise SystemExit(f"Missing env: {name}")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SUB_BASES_FILE = env("SUB_BASES_FILE")
 LISTEN_HOST = env("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(env("LISTEN_PORT", "18080"))
@@ -32,6 +33,10 @@ PAGE_TITLE = env("PAGE_TITLE", "Sub-merge")
 SUB_LINK_REWRITES = os.environ.get("SUB_LINK_REWRITES", "").strip()
 SUB_LINK_REWRITES_FILE = os.environ.get("SUB_LINK_REWRITES_FILE", "").strip()
 SUB_REWRITE_DNS_TTL = float(env("SUB_REWRITE_DNS_TTL", "300"))
+MIHOMO_AUTO = env("MIHOMO_AUTO", "1").lower() not in ("0", "false", "no", "off")
+MIHOMO_TEMPLATE_FILE = env("MIHOMO_TEMPLATE_FILE", os.path.join(BASE_DIR, "mihomo_template.yaml"))
+MIHOMO_PROFILE_TITLE = env("MIHOMO_PROFILE_TITLE", f"{PAGE_TITLE} Mihomo")
+MIHOMO_UPDATE_INTERVAL = env("MIHOMO_UPDATE_INTERVAL", "6")
 
 # внутренний путь, на который nginx проксирует: /sub/<id>
 INTERNAL_PREFIX = "/sub/"
@@ -39,6 +44,16 @@ INTERNAL_PREFIX = "/sub/"
 PUBLIC_PREFIX = "/sub-merge/"
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+MIHOMO_UA_RE = re.compile(
+    r"(mihomo|clash|clashmeta|clash\.meta|clash-verge|clashnyanpasu|"
+    r"clashforwindows|clashx|stash|koala|koala-clash|"
+    r"clashmetaforandroid|clashforandroid|cfw|cfa|flclash)",
+    re.I,
+)
+
+BASE64_FORMATS = {"base64", "raw", "uri", "v2ray", "v2rayn", "plain"}
+MIHOMO_FORMATS = {"mihomo", "clash", "clash-meta", "clashmeta", "yaml", "yml"}
+HTML_FORMATS = {"html", "web"}
 
 PASS_HEADERS = {
     "profile-update-interval",
@@ -289,6 +304,29 @@ def is_browser(h):
         return True
     return any(x in ua for x in ("Mozilla", "Chrome", "Safari", "Firefox", "Edg"))
 
+def query_params(raw_path: str) -> dict[str, str]:
+    return dict(parse_qsl(urlparse(raw_path).query, keep_blank_values=True))
+
+def response_format(headers, raw_path: str) -> str:
+    q = query_params(raw_path)
+    fmt = (q.get("format") or q.get("target") or q.get("type") or "").strip().lower()
+
+    if fmt in HTML_FORMATS:
+        return "html"
+    if fmt in BASE64_FORMATS:
+        return "base64"
+    if fmt in MIHOMO_FORMATS:
+        return "mihomo"
+
+    if is_browser(headers):
+        return "html"
+
+    ua = headers.get("User-Agent") or ""
+    if MIHOMO_AUTO and MIHOMO_UA_RE.search(ua):
+        return "mihomo"
+
+    return "base64"
+
 def scheme_host(self_headers):
     # nginx лучше прокидывать: proxy_set_header X-Forwarded-Proto $scheme;
     scheme = (self_headers.get("X-Forwarded-Proto") or "").strip().lower() or "https"
@@ -298,6 +336,12 @@ def scheme_host(self_headers):
 def public_url(self_headers, sub_id: str) -> str:
     scheme, host = scheme_host(self_headers)
     return f"{scheme}://{host}{PUBLIC_PREFIX}{sub_id}"
+
+def public_url_with_query(self_headers, sub_id: str, query: dict[str, str] | None = None) -> str:
+    base = public_url(self_headers, sub_id)
+    if query:
+        return base + "?" + urlencode(query)
+    return base
 
 def decode_b64_plain_list(s: str):
     s = (s or "").strip()
@@ -611,8 +655,23 @@ def merge_from_all(sub_id: str):
     h0 = ok[0][3]
     return 200, lines_to_b64(merged), h0, merged, note, [x[3] for x in ok]
 
+def load_mihomo_template() -> Template:
+    with open(MIHOMO_TEMPLATE_FILE, "r", encoding="utf-8") as f:
+        return Template(f.read())
+
+def sanitize_template_id(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", value)
+
+def render_mihomo_config(sub_id: str, provider_url: str) -> str:
+    tmpl = load_mihomo_template()
+    safe_sub_id = sanitize_template_id(sub_id)
+    return tmpl.safe_substitute(
+        SUB_ID=safe_sub_id,
+        PROVIDER_URL=provider_url,
+        PROFILE_TITLE=MIHOMO_PROFILE_TITLE,
+    )
+
 # ---------------- HTML ----------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HTML_TEMPLATE_FILE = env("HTML_TEMPLATE_FILE", os.path.join(BASE_DIR, "web_template.html"))
 I18N_FILE = env("I18N_FILE", os.path.join(BASE_DIR, "web_i18n.json"))
 
@@ -700,6 +759,12 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
 # ---------------- HTTP handler ----------------
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
+        self._handle_subscription(send_body=True)
+
+    def do_HEAD(self):
+        self._handle_subscription(send_body=False)
+
+    def _handle_subscription(self, send_body: bool):
         try:
             path = urlparse(self.path).path
 
@@ -715,7 +780,8 @@ class H(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
 
-            want_html = is_browser(self.headers)
+            fmt = response_format(self.headers, self.path)
+            want_html = fmt == "html"
 
             status, body, any_hdrs, lines, note, hdrs_for_userinfo = merge_from_all(sub_id)
 
@@ -728,8 +794,54 @@ class H(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
 
+            if fmt == "mihomo":
+                if status in (400, 404):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                if status != 200:
+                    out = (body or note or "upstream error").encode("utf-8")
+                    self.send_response(status if status else 502)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Subscription-Userinfo", userinfo_agg["header"])
+                    self.send_header("Content-Length", str(len(out)))
+                    self.end_headers()
+                    if send_body:
+                        self.wfile.write(out)
+                    return
+
+                provider_url = public_url_with_query(self.headers, sub_id, {"format": "base64"})
+                try:
+                    yaml_body = render_mihomo_config(sub_id, provider_url)
+                except Exception as e:
+                    msg = f"Mihomo template error: {e}\n"
+                    out = msg.encode("utf-8")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(out)))
+                    self.end_headers()
+                    if send_body:
+                        self.wfile.write(out)
+                    return
+
+                out = yaml_body.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/yaml; charset=utf-8")
+                self.send_header("Subscription-Userinfo", userinfo_agg["header"])
+                self.send_header("Profile-Update-Interval", MIHOMO_UPDATE_INTERVAL)
+                self.send_header("Profile-Title", MIHOMO_PROFILE_TITLE)
+                self.send_header("Profile-Web-Page-Url", public_url(self.headers, sub_id))
+                for hk, hv in pick_some_headers(any_hdrs).items():
+                    if hk.lower() not in {"profile-title", "profile-update-interval"}:
+                        self.send_header(hk, hv)
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                if send_body:
+                    self.wfile.write(out)
+                return
+
             # Клиенты: всегда отдаём "сырой" ответ (base64 или ошибка)
-            if not want_html:
+            if fmt == "base64":
                 out = (body or "").encode("utf-8")
                 self.send_response(status if status else 502)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -746,7 +858,8 @@ class H(BaseHTTPRequestHandler):
 
                 self.send_header("Content-Length", str(len(out)))
                 self.end_headers()
-                self.wfile.write(out)
+                if send_body:
+                    self.wfile.write(out)
                 return
 
             # Браузер: страница
@@ -758,7 +871,8 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(out)))
             self.end_headers()
-            self.wfile.write(out)
+            if send_body:
+                self.wfile.write(out)
 
         except Exception:
             # чтобы обработчик не падал и не приводил к 502 из-за crash-loop
