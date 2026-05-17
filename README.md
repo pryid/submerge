@@ -177,8 +177,7 @@ Edit `/opt/submerge/sub_metadata.json` to change banner text, support links, and
   },
   "v2raytun": {
     "routing": {}
-  },
-  "incy": {}
+  }
 }
 ```
 

@@ -70,7 +70,7 @@ HAPP_UA_RE = re.compile(r"(^|[^a-z0-9])(happ|happ-proxy)([^a-z0-9]|$)", re.I)
 V2RAYTUN_UA_RE = re.compile(r"(v2raytun|v2ray-tun)", re.I)
 RAW_SUB_UA_RE = re.compile(
     r"(nekobox|nekoray|sagernet|v2rayng|v2rayn|hiddify|shadowrocket|"
-    r"streisand|throne|sing-box|singbox|foxray|karing|exclave)",
+    r"streisand|throne|sing-box|singbox|foxray|karing|exclave|incy)",
     re.I,
 )
 
@@ -350,7 +350,7 @@ def response_format(headers, raw_path: str) -> str:
         return "mihomo"
 
     ua = headers.get("User-Agent") or ""
-    if RAW_SUB_UA_RE.search(ua):
+    if RAW_SUB_UA_RE.search(ua) or HAPP_UA_RE.search(ua) or V2RAYTUN_UA_RE.search(ua):
         return "base64"
 
     if is_browser(headers):
@@ -762,7 +762,6 @@ def load_raw_metadata_config() -> dict:
         "metadata": dict(RAW_METADATA_DEFAULTS),
         "happ": {},
         "v2raytun": {},
-        "incy": {},
     }
     if not SUB_METADATA_FILE or not os.path.exists(SUB_METADATA_FILE):
         return config
@@ -781,7 +780,7 @@ def load_raw_metadata_config() -> dict:
         if key in metadata and metadata[key] is not None:
             config["metadata"][key] = str(metadata[key]).strip()
 
-    for section_name in ("happ", "v2raytun", "incy"):
+    for section_name in ("happ", "v2raytun"):
         section = data.get(section_name, {})
         if section is None:
             section = {}

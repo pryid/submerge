@@ -174,6 +174,21 @@ class FormatRoutingTests(unittest.TestCase):
         self.assertEqual(submerge.raw_client_kind({"User-Agent": "Happ/2.0"}, "/sub/demo"), "happ")
         self.assertEqual(submerge.raw_client_kind({"User-Agent": "v2RayTun/6.0"}, "/sub/demo"), "v2raytun")
 
+    def test_happ_and_v2raytun_user_agents_beat_browser_accept(self):
+        happ_headers = {"Accept": "text/html", "User-Agent": "Mozilla/5.0 Happ/2.0"}
+        v2raytun_headers = {"Accept": "text/html", "User-Agent": "Mozilla/5.0 v2RayTun/6.0"}
+
+        self.assertEqual(submerge.response_format(happ_headers, "/sub/demo"), "base64")
+        self.assertEqual(submerge.raw_client_kind(happ_headers, "/sub/demo"), "happ")
+        self.assertEqual(submerge.response_format(v2raytun_headers, "/sub/demo"), "base64")
+        self.assertEqual(submerge.raw_client_kind(v2raytun_headers, "/sub/demo"), "v2raytun")
+
+    def test_incy_gets_plain_base64_even_with_browser_accept(self):
+        headers = {"Accept": "text/html", "User-Agent": "Mozilla/5.0 INCY/1.0"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo"), "base64")
+        self.assertEqual(submerge.raw_client_kind(headers, "/sub/demo"), "generic")
+
     def test_public_url_with_query(self):
         headers = {"Host": "example.com", "X-Forwarded-Proto": "https"}
 
