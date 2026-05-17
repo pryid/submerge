@@ -119,8 +119,6 @@ class FormatRoutingTests(unittest.TestCase):
         self._raw_meta_state = (
             submerge.SUB_METADATA_FILE,
             dict(submerge.RAW_METADATA_DEFAULTS),
-            submerge.HAPP_ROUTING_FILE,
-            submerge.V2RAYTUN_ROUTING_FILE,
         )
 
     def tearDown(self):
@@ -130,8 +128,6 @@ class FormatRoutingTests(unittest.TestCase):
         (
             submerge.SUB_METADATA_FILE,
             raw_defaults,
-            submerge.HAPP_ROUTING_FILE,
-            submerge.V2RAYTUN_ROUTING_FILE,
         ) = self._raw_meta_state
         submerge.RAW_METADATA_DEFAULTS.clear()
         submerge.RAW_METADATA_DEFAULTS.update(raw_defaults)
@@ -201,13 +197,7 @@ class FormatRoutingTests(unittest.TestCase):
         self.assertIn("# Test Profile", out)
 
     def test_happ_routing_link_encodes_json_profile(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "happ.json")
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({"Name": "Demo", "GlobalProxy": "true"}, f)
-
-            submerge.HAPP_ROUTING_FILE = path
-            link = submerge.happ_routing_link()
+        link = submerge.happ_routing_link({"Name": "Demo", "GlobalProxy": "true"})
 
         self.assertTrue(link.startswith("happ://routing/onadd/"))
         payload = link.rsplit("/", 1)[1]
@@ -216,16 +206,17 @@ class FormatRoutingTests(unittest.TestCase):
 
     def test_raw_subscription_metadata_uses_happ_and_v2raytun_routing_formats(self):
         with tempfile.TemporaryDirectory() as tmp:
-            happ_path = os.path.join(tmp, "happ.json")
-            v2raytun_path = os.path.join(tmp, "v2raytun.json")
-            with open(happ_path, "w", encoding="utf-8") as f:
-                json.dump({"Name": "Happ"}, f)
-            with open(v2raytun_path, "w", encoding="utf-8") as f:
-                json.dump({"name": "v2RayTun"}, f)
+            path = os.path.join(tmp, "sub_metadata.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "happ": {"routing": {"Name": "Happ"}},
+                        "v2raytun": {"routing": {"name": "v2RayTun"}},
+                    },
+                    f,
+                )
 
-            submerge.HAPP_ROUTING_FILE = happ_path
-            submerge.V2RAYTUN_ROUTING_FILE = v2raytun_path
-            submerge.SUB_METADATA_FILE = os.path.join(tmp, "missing-metadata.json")
+            submerge.SUB_METADATA_FILE = path
             happ_headers, happ_body = submerge.raw_subscription_metadata(
                 "happ",
                 "upload=1; download=2; total=3",
@@ -248,11 +239,11 @@ class FormatRoutingTests(unittest.TestCase):
             submerge.SUB_METADATA_FILE = path
 
             with open(path, "w", encoding="utf-8") as f:
-                json.dump({"profile_title": "First", "announce_text": "One"}, f)
+                json.dump({"metadata": {"profile_title": "First", "announce_text": "One"}}, f)
             first, _first_body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
 
             with open(path, "w", encoding="utf-8") as f:
-                json.dump({"profile_title": "Second", "announce_text": "Two"}, f)
+                json.dump({"metadata": {"profile_title": "Second", "announce_text": "Two"}}, f)
             second, _second_body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
 
         self.assertEqual(first["Profile-Title"], "base64:Rmlyc3Q=")
@@ -264,7 +255,7 @@ class FormatRoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "sub_metadata.json")
             with open(path, "w", encoding="utf-8") as f:
-                json.dump({"profile_title": "Demo", "body_comments": "1"}, f)
+                json.dump({"metadata": {"profile_title": "Demo", "body_comments": "1"}}, f)
 
             submerge.SUB_METADATA_FILE = path
             headers, body = submerge.raw_subscription_metadata("happ", "", "https://example.com")

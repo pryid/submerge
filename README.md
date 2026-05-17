@@ -23,9 +23,7 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 - `web_template.html` - HTML/CSS/JS template (loaded on every request)
 - `web_i18n.json` - UI localization dictionary and language list (loaded on every request)
 - `mihomo_template.yaml` - Mihomo/Clash YAML template (loaded on every YAML request)
-- `sub_metadata.example.json` - neutral hot-reload metadata/banner config example
-- `happ_routing.example.json` - neutral Happ routing profile example
-- `v2raytun_routing.example.json` - neutral v2RayTun routing JSON example; verify with v2RayTun before production use
+- `sub_metadata.example.json` - neutral hot-reload metadata, banner, and client routing config example
 - `sub_bases.example.json` - example upstream source list
 - `test_formats.sh` - live endpoint compatibility smoke test
 - `submerge.container` - example Quadlet container unit
@@ -53,10 +51,7 @@ Environment variables:
 - `MIHOMO_TEMPLATE_FILE` (default: `./mihomo_template.yaml` next to `submerge.py`)
 - `MIHOMO_PROFILE_TITLE` (default: `${PAGE_TITLE} Mihomo`)
 - `MIHOMO_UPDATE_INTERVAL` (default: `6`): value for the `Profile-Update-Interval` response header
-- `SUB_METADATA_FILE` (default: `./sub_metadata.json` next to `submerge.py`): optional hot-reload JSON for Happ/v2RayTun banners, metadata, and routing file paths
-- `SUB_PROFILE_TITLE`, `SUB_PROFILE_UPDATE_INTERVAL`, `SUB_SUPPORT_URL`, `SUB_ANNOUNCE_TEXT`, `SUB_ANNOUNCE_URL`, `SUB_INFO_TEXT`, `SUB_INFO_COLOR`, `SUB_INFO_BUTTON_TEXT`, `SUB_INFO_BUTTON_LINK`, `SUB_EXPIRE`, `SUB_EXPIRE_BUTTON_LINK`, `SUB_BODY_COMMENTS` (optional): legacy env defaults used only when `SUB_METADATA_FILE` is absent or omits a field
-- `HAPP_ROUTING_FILE` (default: `./happ_routing.json` next to `submerge.py`): optional Happ routing JSON profile
-- `V2RAYTUN_ROUTING_FILE` (optional): optional v2RayTun routing JSON, preferably exported from v2RayTun
+- `SUB_METADATA_FILE` (default: `./sub_metadata.json` next to `submerge.py`): optional hot-reload JSON for Happ/v2RayTun banners, metadata, and routing profiles
 - `HTML_TEMPLATE_FILE` (default: `./web_template.html` next to `submerge.py`)
 - `I18N_FILE` (default: `./web_i18n.json` next to `submerge.py`)
 
@@ -157,34 +152,39 @@ Example setup:
 
 ```bash
 sudo cp sub_metadata.example.json /opt/submerge/sub_metadata.json
-sudo cp happ_routing.example.json /opt/submerge/happ_routing.json
-sudo cp v2raytun_routing.example.json /opt/submerge/v2raytun_routing.json
 ```
 
-Edit `/opt/submerge/sub_metadata.json` to change banner text, support links, and routing file paths. This file is read on every matching Happ/v2RayTun request, so changes do not require a service restart.
+Edit `/opt/submerge/sub_metadata.json` to change banner text, support links, and embedded routing profiles. This file is read on every matching Happ/v2RayTun request, so changes do not require a service restart.
 
 ```json
 {
-  "profile_title": "Submerge",
-  "profile_update_interval": "1",
-  "support_url": "https://example.com/support",
-  "announce_text": "Servers updated.",
-  "announce_url": "https://example.com/support",
-  "info_text": "Servers updated.",
-  "info_color": "blue",
-  "info_button_text": "Support",
-  "info_button_link": "https://example.com/support",
-  "expire": "",
-  "expire_button_link": "",
-  "happ_routing_file": "/opt/submerge/happ_routing.json",
-  "v2raytun_routing_file": "/opt/submerge/v2raytun_routing.json",
-  "body_comments": "0"
+  "metadata": {
+    "profile_title": "Submerge",
+    "profile_update_interval": "1",
+    "support_url": "https://example.com/support",
+    "announce_text": "Servers updated.",
+    "announce_url": "https://example.com/support",
+    "info_text": "Servers updated.",
+    "info_color": "blue",
+    "info_button_text": "Support",
+    "info_button_link": "https://example.com/support",
+    "expire": "",
+    "expire_button_link": "",
+    "body_comments": "0"
+  },
+  "happ": {
+    "routing": {}
+  },
+  "v2raytun": {
+    "routing": {}
+  },
+  "incy": {}
 }
 ```
 
 `body_comments` is off by default. Enabling it adds `#...` metadata lines into the decoded subscription body for clients that support body headers, but it can confuse stricter raw clients.
 
-Deployment-specific files such as `sub_metadata.json`, `happ_routing.json`, provider-specific `happ_*.json` files, and `v2raytun_routing.json` are ignored by git. Keep real domains, support links, and provider-specific names in those local files, not in tracked examples.
+Deployment-specific files such as `sub_metadata.json`, provider-specific Mihomo YAML files, and scratch routing exports are ignored by git. Keep real domains, support links, and provider-specific names in local ignored files, not in tracked examples.
 
 ## Run Locally (Python)
 
@@ -206,7 +206,7 @@ This repository already includes `submerge.container`.
 
 ```bash
 sudo mkdir -p /opt/submerge
-sudo cp submerge.py web_template.html web_i18n.json mihomo_template.yaml sub_metadata.example.json happ_routing.example.json v2raytun_routing.example.json /opt/submerge/
+sudo cp submerge.py web_template.html web_i18n.json mihomo_template.yaml sub_metadata.example.json /opt/submerge/
 sudo cp sub_bases.example.json /opt/submerge/sub_bases.json
 ```
 
@@ -285,9 +285,9 @@ sudo nginx -t && sudo systemctl reload nginx
 - Changes in the file referenced by `SUB_BASES_FILE` are picked up on the next subscription request.
 - Changes in `submerge.py` require service restart.
 - Changes in the file referenced by `SUB_LINK_REWRITES_FILE` are picked up on the next subscription request.
-- Changes in `SUB_METADATA_FILE`, and in routing files referenced by `HAPP_ROUTING_FILE`, `V2RAYTUN_ROUTING_FILE`, or `sub_metadata.json`, are picked up on the next matching Happ/v2RayTun request.
+- Changes in `SUB_METADATA_FILE` are picked up on the next matching Happ/v2RayTun request.
 - Changing the value of `SUB_BASES_FILE`, `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the Quadlet container file requires service restart.
-- Changing the value of `SUB_METADATA_FILE`, `HAPP_ROUTING_FILE`, `V2RAYTUN_ROUTING_FILE`, or any `SUB_*` metadata environment variable requires service restart.
+- Changing the value of `SUB_METADATA_FILE` requires service restart.
 
 ## Notes
 

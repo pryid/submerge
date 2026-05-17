@@ -38,22 +38,20 @@ MIHOMO_TEMPLATE_FILE = env("MIHOMO_TEMPLATE_FILE", os.path.join(BASE_DIR, "mihom
 MIHOMO_PROFILE_TITLE = env("MIHOMO_PROFILE_TITLE", f"{PAGE_TITLE} Mihomo")
 MIHOMO_UPDATE_INTERVAL = env("MIHOMO_UPDATE_INTERVAL", "6")
 SUB_METADATA_FILE = os.environ.get("SUB_METADATA_FILE", os.path.join(BASE_DIR, "sub_metadata.json")).strip()
-HAPP_ROUTING_FILE = os.environ.get("HAPP_ROUTING_FILE", os.path.join(BASE_DIR, "happ_routing.json")).strip()
-V2RAYTUN_ROUTING_FILE = os.environ.get("V2RAYTUN_ROUTING_FILE", "").strip()
 
 RAW_METADATA_DEFAULTS = {
-    "profile_title": os.environ.get("SUB_PROFILE_TITLE", PAGE_TITLE).strip(),
-    "profile_update_interval": os.environ.get("SUB_PROFILE_UPDATE_INTERVAL", "").strip(),
-    "support_url": os.environ.get("SUB_SUPPORT_URL", "").strip(),
-    "announce_text": os.environ.get("SUB_ANNOUNCE_TEXT", "").strip(),
-    "announce_url": os.environ.get("SUB_ANNOUNCE_URL", "").strip(),
-    "info_text": os.environ.get("SUB_INFO_TEXT", "").strip(),
-    "info_color": os.environ.get("SUB_INFO_COLOR", "blue").strip().lower(),
-    "info_button_text": os.environ.get("SUB_INFO_BUTTON_TEXT", "").strip(),
-    "info_button_link": os.environ.get("SUB_INFO_BUTTON_LINK", "").strip(),
-    "expire": os.environ.get("SUB_EXPIRE", "").strip(),
-    "expire_button_link": os.environ.get("SUB_EXPIRE_BUTTON_LINK", "").strip(),
-    "body_comments": os.environ.get("SUB_BODY_COMMENTS", "").strip(),
+    "profile_title": "",
+    "profile_update_interval": "",
+    "support_url": "",
+    "announce_text": "",
+    "announce_url": "",
+    "info_text": "",
+    "info_color": "blue",
+    "info_button_text": "",
+    "info_button_link": "",
+    "expire": "",
+    "expire_button_link": "",
+    "body_comments": "0",
 }
 
 # внутренний путь, на который nginx проксирует: /sub/<id>
@@ -743,24 +741,29 @@ def compact_json_b64(data) -> str:
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     return b64_utf8(raw)
 
-def optional_routing_b64(path: str) -> str | None:
-    if not path:
+def routing_profile_b64(profile) -> str | None:
+    if not profile:
         return None
-    if not os.path.exists(path):
-        return None
-    return compact_json_b64(load_json_file(path))
+    if not isinstance(profile, dict):
+        raise ValueError("routing profile must be a JSON object")
+    return compact_json_b64(profile)
 
-def happ_routing_link(path: str | None = None) -> str | None:
-    value = optional_routing_b64(path or HAPP_ROUTING_FILE)
+def happ_routing_link(profile) -> str | None:
+    value = routing_profile_b64(profile)
     if not value:
         return None
     return "happ://routing/onadd/" + value
 
-def v2raytun_routing_value(path: str | None = None) -> str | None:
-    return optional_routing_b64(path or V2RAYTUN_ROUTING_FILE)
+def v2raytun_routing_value(profile) -> str | None:
+    return routing_profile_b64(profile)
 
-def load_raw_metadata_config() -> dict[str, str]:
-    config = dict(RAW_METADATA_DEFAULTS)
+def load_raw_metadata_config() -> dict:
+    config = {
+        "metadata": dict(RAW_METADATA_DEFAULTS),
+        "happ": {},
+        "v2raytun": {},
+        "incy": {},
+    }
     if not SUB_METADATA_FILE or not os.path.exists(SUB_METADATA_FILE):
         return config
 
@@ -768,32 +771,23 @@ def load_raw_metadata_config() -> dict[str, str]:
     if not isinstance(data, dict):
         raise ValueError(f"{SUB_METADATA_FILE} must be a JSON object")
 
-    aliases = {
-        "profile_title": ("profile_title", "Profile-Title", "SUB_PROFILE_TITLE"),
-        "profile_update_interval": (
-            "profile_update_interval",
-            "Profile-Update-Interval",
-            "SUB_PROFILE_UPDATE_INTERVAL",
-        ),
-        "support_url": ("support_url", "Support-Url", "SUB_SUPPORT_URL"),
-        "announce_text": ("announce_text", "Announce", "SUB_ANNOUNCE_TEXT"),
-        "announce_url": ("announce_url", "Announce-Url", "SUB_ANNOUNCE_URL"),
-        "info_text": ("info_text", "Sub-Info-Text", "SUB_INFO_TEXT"),
-        "info_color": ("info_color", "Sub-Info-Color", "SUB_INFO_COLOR"),
-        "info_button_text": ("info_button_text", "Sub-Info-Button-Text", "SUB_INFO_BUTTON_TEXT"),
-        "info_button_link": ("info_button_link", "Sub-Info-Button-Link", "SUB_INFO_BUTTON_LINK"),
-        "expire": ("expire", "Sub-Expire", "SUB_EXPIRE"),
-        "expire_button_link": ("expire_button_link", "Sub-Expire-Button-Link", "SUB_EXPIRE_BUTTON_LINK"),
-        "body_comments": ("body_comments", "body_comments_enabled", "SUB_BODY_COMMENTS"),
-        "happ_routing_file": ("happ_routing_file", "HAPP_ROUTING_FILE"),
-        "v2raytun_routing_file": ("v2raytun_routing_file", "V2RAYTUN_ROUTING_FILE"),
-    }
+    metadata = data.get("metadata", {})
+    if metadata is None:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        raise ValueError(f"{SUB_METADATA_FILE}.metadata must be a JSON object")
 
-    for target, keys in aliases.items():
-        for key in keys:
-            if key in data and data[key] is not None:
-                config[target] = str(data[key]).strip()
-                break
+    for key in RAW_METADATA_DEFAULTS:
+        if key in metadata and metadata[key] is not None:
+            config["metadata"][key] = str(metadata[key]).strip()
+
+    for section_name in ("happ", "v2raytun", "incy"):
+        section = data.get(section_name, {})
+        if section is None:
+            section = {}
+        if not isinstance(section, dict):
+            raise ValueError(f"{SUB_METADATA_FILE}.{section_name} must be a JSON object")
+        config[section_name] = section
     return config
 
 def raw_subscription_metadata(kind: str, userinfo_header: str, web_page_url: str) -> tuple[dict[str, str], list[str]]:
@@ -804,20 +798,21 @@ def raw_subscription_metadata(kind: str, userinfo_header: str, web_page_url: str
         return headers, body_lines
 
     config = load_raw_metadata_config()
+    metadata = config["metadata"]
 
-    support_url = config.get("support_url", "")
-    announce_text = config.get("announce_text", "")
-    announce_url = config.get("announce_url", "") or support_url
-    info_text = config.get("info_text", "") or announce_text
-    info_button_link = config.get("info_button_link", "") or support_url
-    body_comments = optional_bool(config.get("body_comments"), False)
+    support_url = metadata.get("support_url", "")
+    announce_text = metadata.get("announce_text", "")
+    announce_url = metadata.get("announce_url", "") or support_url
+    info_text = metadata.get("info_text", "") or announce_text
+    info_button_link = metadata.get("info_button_link", "") or support_url
+    body_comments = optional_bool(metadata.get("body_comments"), False)
 
-    title = clamp_text(config.get("profile_title", ""), 25)
+    title = clamp_text(metadata.get("profile_title", ""), 25)
     if title:
         headers["Profile-Title"] = b64_header(title)
 
-    if config.get("profile_update_interval"):
-        headers["Profile-Update-Interval"] = config["profile_update_interval"]
+    if metadata.get("profile_update_interval"):
+        headers["Profile-Update-Interval"] = metadata["profile_update_interval"]
 
     if web_page_url:
         headers["Profile-Web-Page-Url"] = web_page_url
@@ -835,26 +830,26 @@ def raw_subscription_metadata(kind: str, userinfo_header: str, web_page_url: str
     clipped_info_text = clamp_text(info_text, 200)
     if clipped_info_text:
         headers["Sub-Info-Text"] = clipped_info_text
-        info_color = config.get("info_color", "").lower()
+        info_color = metadata.get("info_color", "").lower()
         if info_color in {"red", "blue", "green"}:
             headers["Sub-Info-Color"] = info_color
-        if config.get("info_button_text"):
-            headers["Sub-Info-Button-Text"] = clamp_text(config["info_button_text"], 25)
+        if metadata.get("info_button_text"):
+            headers["Sub-Info-Button-Text"] = clamp_text(metadata["info_button_text"], 25)
         if info_button_link:
             headers["Sub-Info-Button-Link"] = info_button_link
 
-    if config.get("expire"):
-        headers["Sub-Expire"] = config["expire"]
-        if config.get("expire_button_link"):
-            headers["Sub-Expire-Button-Link"] = config["expire_button_link"]
+    if metadata.get("expire"):
+        headers["Sub-Expire"] = metadata["expire"]
+        if metadata.get("expire_button_link"):
+            headers["Sub-Expire-Button-Link"] = metadata["expire_button_link"]
 
     if kind == "happ":
-        routing = happ_routing_link(config.get("happ_routing_file"))
+        routing = happ_routing_link(config["happ"].get("routing"))
         if routing:
             headers["Routing"] = routing
             headers["Routing-Enable"] = "1"
     elif kind == "v2raytun":
-        routing = v2raytun_routing_value(config.get("v2raytun_routing_file"))
+        routing = v2raytun_routing_value(config["v2raytun"].get("routing"))
         if routing:
             headers["Routing"] = routing
 
