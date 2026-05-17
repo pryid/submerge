@@ -1,0 +1,16 @@
+{
+  "profile_title": "Submerge",
+  "profile_update_interval": "1",
+  "support_url": "https://example.com/support",
+  "announce_text": "Servers updated.",
+  "announce_url": "https://example.com/support",
+  "info_text": "Servers updated.",
+  "info_color": "blue",
+  "info_button_text": "Support",
+  "info_button_link": "https://example.com/support",
+  "expire": "",
+  "expire_button_link": "",
+  "happ_routing_file": "/opt/submerge/happ_routing.json",
+  "v2raytun_routing_file": "/opt/submerge/v2raytun_routing.json",
+  "body_comments": "0"
+}

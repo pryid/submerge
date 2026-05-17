@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import tempfile
@@ -15,6 +16,12 @@ os.environ.pop("SUB_LINK_REWRITES", None)
 os.environ.pop("SUB_LINK_REWRITES_FILE", None)
 
 import submerge  # noqa: E402
+
+
+def base64_urlsafe_decode(value):
+    value = submerge.unquote(value)
+    value += "=" * (-len(value) % 4)
+    return base64.b64decode(value).decode("utf-8")
 
 
 class SubBasesTests(unittest.TestCase):
@@ -109,11 +116,25 @@ class FormatRoutingTests(unittest.TestCase):
         self._mihomo_auto = submerge.MIHOMO_AUTO
         self._mihomo_template_file = submerge.MIHOMO_TEMPLATE_FILE
         self._mihomo_profile_title = submerge.MIHOMO_PROFILE_TITLE
+        self._raw_meta_state = (
+            submerge.SUB_METADATA_FILE,
+            dict(submerge.RAW_METADATA_DEFAULTS),
+            submerge.HAPP_ROUTING_FILE,
+            submerge.V2RAYTUN_ROUTING_FILE,
+        )
 
     def tearDown(self):
         submerge.MIHOMO_AUTO = self._mihomo_auto
         submerge.MIHOMO_TEMPLATE_FILE = self._mihomo_template_file
         submerge.MIHOMO_PROFILE_TITLE = self._mihomo_profile_title
+        (
+            submerge.SUB_METADATA_FILE,
+            raw_defaults,
+            submerge.HAPP_ROUTING_FILE,
+            submerge.V2RAYTUN_ROUTING_FILE,
+        ) = self._raw_meta_state
+        submerge.RAW_METADATA_DEFAULTS.clear()
+        submerge.RAW_METADATA_DEFAULTS.update(raw_defaults)
 
     def test_response_format_explicit_base64_beats_mihomo_user_agent(self):
         headers = {"User-Agent": "mihomo/1.19.0"}
@@ -130,6 +151,11 @@ class FormatRoutingTests(unittest.TestCase):
 
         self.assertEqual(submerge.response_format(headers, "/sub/demo"), "html")
 
+    def test_response_format_known_raw_client_beats_browser_accept(self):
+        headers = {"Accept": "text/html", "User-Agent": "NekoBoxForAndroid/1.3.9 Mozilla/5.0"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo"), "base64")
+
     def test_response_format_mihomo_ua_when_auto_enabled(self):
         submerge.MIHOMO_AUTO = True
         headers = {"User-Agent": "Koala"}
@@ -141,6 +167,16 @@ class FormatRoutingTests(unittest.TestCase):
         headers = {"User-Agent": "Clash.Meta"}
 
         self.assertEqual(submerge.response_format(headers, "/sub/demo"), "base64")
+
+    def test_response_format_happ_is_raw_subscription(self):
+        headers = {"Accept": "text/html", "User-Agent": "Mozilla/5.0"}
+
+        self.assertEqual(submerge.response_format(headers, "/sub/demo?format=happ"), "base64")
+        self.assertEqual(submerge.raw_client_kind(headers, "/sub/demo?format=happ"), "happ")
+
+    def test_raw_client_kind_from_user_agent(self):
+        self.assertEqual(submerge.raw_client_kind({"User-Agent": "Happ/2.0"}, "/sub/demo"), "happ")
+        self.assertEqual(submerge.raw_client_kind({"User-Agent": "v2RayTun/6.0"}, "/sub/demo"), "v2raytun")
 
     def test_public_url_with_query(self):
         headers = {"Host": "example.com", "X-Forwarded-Proto": "https"}
@@ -163,6 +199,78 @@ class FormatRoutingTests(unittest.TestCase):
         self.assertIn("url: 'https://example.com/sub-merge/bad_id?format=base64'", out)
         self.assertIn("path: provider-bad_id.txt", out)
         self.assertIn("# Test Profile", out)
+
+    def test_happ_routing_link_encodes_json_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "happ.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"Name": "Demo", "GlobalProxy": "true"}, f)
+
+            submerge.HAPP_ROUTING_FILE = path
+            link = submerge.happ_routing_link()
+
+        self.assertTrue(link.startswith("happ://routing/onadd/"))
+        payload = link.rsplit("/", 1)[1]
+        decoded = json.loads(base64_urlsafe_decode(payload))
+        self.assertEqual(decoded["Name"], "Demo")
+
+    def test_raw_subscription_metadata_uses_happ_and_v2raytun_routing_formats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            happ_path = os.path.join(tmp, "happ.json")
+            v2raytun_path = os.path.join(tmp, "v2raytun.json")
+            with open(happ_path, "w", encoding="utf-8") as f:
+                json.dump({"Name": "Happ"}, f)
+            with open(v2raytun_path, "w", encoding="utf-8") as f:
+                json.dump({"name": "v2RayTun"}, f)
+
+            submerge.HAPP_ROUTING_FILE = happ_path
+            submerge.V2RAYTUN_ROUTING_FILE = v2raytun_path
+            submerge.SUB_METADATA_FILE = os.path.join(tmp, "missing-metadata.json")
+            happ_headers, happ_body = submerge.raw_subscription_metadata(
+                "happ",
+                "upload=1; download=2; total=3",
+                "https://example.com/sub-merge/demo",
+            )
+            v2_headers, _v2_body = submerge.raw_subscription_metadata(
+                "v2raytun",
+                "upload=1; download=2; total=3",
+                "https://example.com/sub-merge/demo",
+            )
+
+        self.assertTrue(happ_headers["Routing"].startswith("happ://routing/onadd/"))
+        self.assertEqual(happ_body, [])
+        self.assertFalse(v2_headers["Routing"].startswith("happ://"))
+        self.assertEqual(json.loads(base64_urlsafe_decode(v2_headers["Routing"]))["name"], "v2RayTun")
+
+    def test_raw_subscription_metadata_hot_reloads_json_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "sub_metadata.json")
+            submerge.SUB_METADATA_FILE = path
+
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"profile_title": "First", "announce_text": "One"}, f)
+            first, _first_body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
+
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"profile_title": "Second", "announce_text": "Two"}, f)
+            second, _second_body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
+
+        self.assertEqual(first["Profile-Title"], "base64:Rmlyc3Q=")
+        self.assertEqual(first["Announce"], "base64:T25l")
+        self.assertEqual(second["Profile-Title"], "base64:U2Vjb25k")
+        self.assertEqual(second["Announce"], "base64:VHdv")
+
+    def test_raw_subscription_metadata_body_comments_are_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "sub_metadata.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"profile_title": "Demo", "body_comments": "1"}, f)
+
+            submerge.SUB_METADATA_FILE = path
+            headers, body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
+
+        self.assertEqual(headers["Profile-Title"], "base64:RGVtbw==")
+        self.assertIn("#profile-title: base64:RGVtbw==", body)
 
 
 class LinkRewriteTests(unittest.TestCase):

@@ -31,4 +31,9 @@ Desktop.ini
 # Local deployment config with real upstreams and rewrite targets
 sub_bases.json
 link_rewrites.json
+sub_metadata.json
 mihomo_[!t]*.yaml
+happ_*.json
+!happ_routing.example.json
+v2raytun_*.json
+!v2raytun_routing.example.json

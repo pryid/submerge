@@ -4,6 +4,7 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 
 - raw merged output for clients
 - Mihomo/Clash-compatible YAML profiles for Clash.Meta, Mihomo, Clash Verge, Koala, Stash, and similar clients
+- Happ/v2RayTun-compatible metadata headers, banners, and optional routing profiles for raw subscriptions
 - a browser-friendly HTML page with QR, copy actions, and traffic summary
 
 ## What It Does
@@ -13,6 +14,7 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 - Aggregates `Subscription-Userinfo` across successful upstreams
 - Returns raw response for non-browser clients
 - Returns a full Mihomo YAML profile for Mihomo-like user agents, with nodes loaded through the merged base64 provider URL
+- Adds optional Happ/v2RayTun routing and banner metadata to raw subscriptions when those clients are detected
 - Renders an HTML viewer for browser requests
 
 ## Project Files
@@ -21,6 +23,9 @@ Submerge is a small HTTP service that merges subscription responses from multipl
 - `web_template.html` - HTML/CSS/JS template (loaded on every request)
 - `web_i18n.json` - UI localization dictionary and language list (loaded on every request)
 - `mihomo_template.yaml` - Mihomo/Clash YAML template (loaded on every YAML request)
+- `sub_metadata.example.json` - neutral hot-reload metadata/banner config example
+- `happ_routing.example.json` - neutral Happ routing profile example
+- `v2raytun_routing.example.json` - neutral v2RayTun routing JSON example; verify with v2RayTun before production use
 - `sub_bases.example.json` - example upstream source list
 - `test_formats.sh` - live endpoint compatibility smoke test
 - `submerge.container` - example Quadlet container unit
@@ -48,6 +53,10 @@ Environment variables:
 - `MIHOMO_TEMPLATE_FILE` (default: `./mihomo_template.yaml` next to `submerge.py`)
 - `MIHOMO_PROFILE_TITLE` (default: `${PAGE_TITLE} Mihomo`)
 - `MIHOMO_UPDATE_INTERVAL` (default: `6`): value for the `Profile-Update-Interval` response header
+- `SUB_METADATA_FILE` (default: `./sub_metadata.json` next to `submerge.py`): optional hot-reload JSON for Happ/v2RayTun banners, metadata, and routing file paths
+- `SUB_PROFILE_TITLE`, `SUB_PROFILE_UPDATE_INTERVAL`, `SUB_SUPPORT_URL`, `SUB_ANNOUNCE_TEXT`, `SUB_ANNOUNCE_URL`, `SUB_INFO_TEXT`, `SUB_INFO_COLOR`, `SUB_INFO_BUTTON_TEXT`, `SUB_INFO_BUTTON_LINK`, `SUB_EXPIRE`, `SUB_EXPIRE_BUTTON_LINK`, `SUB_BODY_COMMENTS` (optional): legacy env defaults used only when `SUB_METADATA_FILE` is absent or omits a field
+- `HAPP_ROUTING_FILE` (default: `./happ_routing.json` next to `submerge.py`): optional Happ routing JSON profile
+- `V2RAYTUN_ROUTING_FILE` (optional): optional v2RayTun routing JSON, preferably exported from v2RayTun
 - `HTML_TEMPLATE_FILE` (default: `./web_template.html` next to `submerge.py`)
 - `I18N_FILE` (default: `./web_i18n.json` next to `submerge.py`)
 
@@ -126,6 +135,57 @@ If the rewrite JSON file becomes invalid while the service is running, Submerge 
 
 Keep deployment-specific source and rewrite files out of git. The repository ignores `sub_bases.json` and `link_rewrites.json` for this reason.
 
+## Happ and v2RayTun Metadata
+
+Raw subscriptions can include optional client metadata for Happ and v2RayTun without changing the public URL. Submerge keeps generic clients on the old base64 body, but when it sees a Happ or v2RayTun user agent, or an explicit `?format=happ` / `?format=v2raytun`, it adds compatible headers. By default the subscription body is not changed, so raw clients that do not understand body metadata still receive a clean proxy URI list.
+
+Happ routing uses a Happ routing profile JSON and is sent as:
+
+```http
+routing: happ://routing/onadd/<base64-json>
+```
+
+v2RayTun routing uses a v2RayTun routing JSON and is sent as:
+
+```http
+routing: <base64-json>
+```
+
+The two formats are intentionally separate. Happ and v2RayTun use the same header name, but the value format is different.
+
+Example setup:
+
+```bash
+sudo cp sub_metadata.example.json /opt/submerge/sub_metadata.json
+sudo cp happ_routing.example.json /opt/submerge/happ_routing.json
+sudo cp v2raytun_routing.example.json /opt/submerge/v2raytun_routing.json
+```
+
+Edit `/opt/submerge/sub_metadata.json` to change banner text, support links, and routing file paths. This file is read on every matching Happ/v2RayTun request, so changes do not require a service restart.
+
+```json
+{
+  "profile_title": "Submerge",
+  "profile_update_interval": "1",
+  "support_url": "https://example.com/support",
+  "announce_text": "Servers updated.",
+  "announce_url": "https://example.com/support",
+  "info_text": "Servers updated.",
+  "info_color": "blue",
+  "info_button_text": "Support",
+  "info_button_link": "https://example.com/support",
+  "expire": "",
+  "expire_button_link": "",
+  "happ_routing_file": "/opt/submerge/happ_routing.json",
+  "v2raytun_routing_file": "/opt/submerge/v2raytun_routing.json",
+  "body_comments": "0"
+}
+```
+
+`body_comments` is off by default. Enabling it adds `#...` metadata lines into the decoded subscription body for clients that support body headers, but it can confuse stricter raw clients.
+
+Deployment-specific files such as `sub_metadata.json`, `happ_routing.json`, provider-specific `happ_*.json` files, and `v2raytun_routing.json` are ignored by git. Keep real domains, support links, and provider-specific names in those local files, not in tracked examples.
+
 ## Run Locally (Python)
 
 ```bash
@@ -146,7 +206,7 @@ This repository already includes `submerge.container`.
 
 ```bash
 sudo mkdir -p /opt/submerge
-sudo cp submerge.py web_template.html web_i18n.json mihomo_template.yaml /opt/submerge/
+sudo cp submerge.py web_template.html web_i18n.json mihomo_template.yaml sub_metadata.example.json happ_routing.example.json v2raytun_routing.example.json /opt/submerge/
 sudo cp sub_bases.example.json /opt/submerge/sub_bases.json
 ```
 
@@ -209,6 +269,10 @@ sudo nginx -t && sudo systemctl reload nginx
   - request same URL with non-browser client (for example `curl`)
 - Force raw output:
   - `https://your-domain/sub-merge/<id>?format=base64`
+- Force Happ raw output with Happ routing/metadata headers:
+  - `https://your-domain/sub-merge/<id>?format=happ`
+- Force v2RayTun raw output with v2RayTun routing/metadata headers:
+  - `https://your-domain/sub-merge/<id>?format=v2raytun`
 - Force Mihomo YAML:
   - `https://your-domain/sub-merge/<id>?format=mihomo`
 - Live smoke test:
@@ -221,7 +285,9 @@ sudo nginx -t && sudo systemctl reload nginx
 - Changes in the file referenced by `SUB_BASES_FILE` are picked up on the next subscription request.
 - Changes in `submerge.py` require service restart.
 - Changes in the file referenced by `SUB_LINK_REWRITES_FILE` are picked up on the next subscription request.
+- Changes in `SUB_METADATA_FILE`, and in routing files referenced by `HAPP_ROUTING_FILE`, `V2RAYTUN_ROUTING_FILE`, or `sub_metadata.json`, are picked up on the next matching Happ/v2RayTun request.
 - Changing the value of `SUB_BASES_FILE`, `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the Quadlet container file requires service restart.
+- Changing the value of `SUB_METADATA_FILE`, `HAPP_ROUTING_FILE`, `V2RAYTUN_ROUTING_FILE`, or any `SUB_*` metadata environment variable requires service restart.
 
 ## Notes
 

@@ -37,6 +37,24 @@ MIHOMO_AUTO = env("MIHOMO_AUTO", "1").lower() not in ("0", "false", "no", "off")
 MIHOMO_TEMPLATE_FILE = env("MIHOMO_TEMPLATE_FILE", os.path.join(BASE_DIR, "mihomo_template.yaml"))
 MIHOMO_PROFILE_TITLE = env("MIHOMO_PROFILE_TITLE", f"{PAGE_TITLE} Mihomo")
 MIHOMO_UPDATE_INTERVAL = env("MIHOMO_UPDATE_INTERVAL", "6")
+SUB_METADATA_FILE = os.environ.get("SUB_METADATA_FILE", os.path.join(BASE_DIR, "sub_metadata.json")).strip()
+HAPP_ROUTING_FILE = os.environ.get("HAPP_ROUTING_FILE", os.path.join(BASE_DIR, "happ_routing.json")).strip()
+V2RAYTUN_ROUTING_FILE = os.environ.get("V2RAYTUN_ROUTING_FILE", "").strip()
+
+RAW_METADATA_DEFAULTS = {
+    "profile_title": os.environ.get("SUB_PROFILE_TITLE", PAGE_TITLE).strip(),
+    "profile_update_interval": os.environ.get("SUB_PROFILE_UPDATE_INTERVAL", "").strip(),
+    "support_url": os.environ.get("SUB_SUPPORT_URL", "").strip(),
+    "announce_text": os.environ.get("SUB_ANNOUNCE_TEXT", "").strip(),
+    "announce_url": os.environ.get("SUB_ANNOUNCE_URL", "").strip(),
+    "info_text": os.environ.get("SUB_INFO_TEXT", "").strip(),
+    "info_color": os.environ.get("SUB_INFO_COLOR", "blue").strip().lower(),
+    "info_button_text": os.environ.get("SUB_INFO_BUTTON_TEXT", "").strip(),
+    "info_button_link": os.environ.get("SUB_INFO_BUTTON_LINK", "").strip(),
+    "expire": os.environ.get("SUB_EXPIRE", "").strip(),
+    "expire_button_link": os.environ.get("SUB_EXPIRE_BUTTON_LINK", "").strip(),
+    "body_comments": os.environ.get("SUB_BODY_COMMENTS", "").strip(),
+}
 
 # внутренний путь, на который nginx проксирует: /sub/<id>
 INTERNAL_PREFIX = "/sub/"
@@ -50,15 +68,22 @@ MIHOMO_UA_RE = re.compile(
     r"clashmetaforandroid|clashforandroid|cfw|cfa|flclash)",
     re.I,
 )
+HAPP_UA_RE = re.compile(r"(^|[^a-z0-9])(happ|happ-proxy)([^a-z0-9]|$)", re.I)
+V2RAYTUN_UA_RE = re.compile(r"(v2raytun|v2ray-tun)", re.I)
+RAW_SUB_UA_RE = re.compile(
+    r"(nekobox|nekoray|sagernet|v2rayng|v2rayn|hiddify|shadowrocket|"
+    r"streisand|throne|sing-box|singbox|foxray|karing|exclave)",
+    re.I,
+)
 
 BASE64_FORMATS = {"base64", "raw", "uri", "v2ray", "v2rayn", "plain"}
 MIHOMO_FORMATS = {"mihomo", "clash", "clash-meta", "clashmeta", "yaml", "yml"}
 HTML_FORMATS = {"html", "web"}
+HAPP_FORMATS = {"happ", "happ-proxy"}
+V2RAYTUN_FORMATS = {"v2raytun", "v2ray-tun"}
 
 PASS_HEADERS = {
     "profile-update-interval",
-    "profile-title",
-    "routing-enable",
     "support-url",
 }
 
@@ -88,6 +113,12 @@ def config_bool(value, default: bool = False) -> bool:
         if v in ("0", "false", "no", "off", ""):
             return False
     raise ValueError(f"Invalid boolean value in link rewrites: {value!r}")
+
+
+def optional_bool(value, default: bool = False) -> bool:
+    if value in (None, ""):
+        return default
+    return config_bool(value, default)
 
 
 def parse_sub_bases(data, source: str = "SUB_BASES_FILE") -> list[str]:
@@ -315,17 +346,38 @@ def response_format(headers, raw_path: str) -> str:
         return "html"
     if fmt in BASE64_FORMATS:
         return "base64"
+    if fmt in HAPP_FORMATS or fmt in V2RAYTUN_FORMATS:
+        return "base64"
     if fmt in MIHOMO_FORMATS:
         return "mihomo"
+
+    ua = headers.get("User-Agent") or ""
+    if RAW_SUB_UA_RE.search(ua):
+        return "base64"
 
     if is_browser(headers):
         return "html"
 
-    ua = headers.get("User-Agent") or ""
     if MIHOMO_AUTO and MIHOMO_UA_RE.search(ua):
         return "mihomo"
 
     return "base64"
+
+def raw_client_kind(headers, raw_path: str) -> str:
+    q = query_params(raw_path)
+    fmt = (q.get("format") or q.get("target") or q.get("type") or "").strip().lower()
+
+    if fmt in HAPP_FORMATS:
+        return "happ"
+    if fmt in V2RAYTUN_FORMATS:
+        return "v2raytun"
+
+    ua = headers.get("User-Agent") or ""
+    if HAPP_UA_RE.search(ua):
+        return "happ"
+    if V2RAYTUN_UA_RE.search(ua):
+        return "v2raytun"
+    return "generic"
 
 def scheme_host(self_headers):
     # nginx лучше прокидывать: proxy_set_header X-Forwarded-Proto $scheme;
@@ -671,6 +723,149 @@ def render_mihomo_config(sub_id: str, provider_url: str) -> str:
         PROFILE_TITLE=MIHOMO_PROFILE_TITLE,
     )
 
+def clamp_text(value: str, limit: int) -> str:
+    value = str(value or "").strip()
+    if limit > 0 and len(value) > limit:
+        return value[:limit]
+    return value
+
+def b64_utf8(value: str) -> str:
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+def b64_header(value: str) -> str:
+    return "base64:" + b64_utf8(value)
+
+def load_json_file(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def compact_json_b64(data) -> str:
+    raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return b64_utf8(raw)
+
+def optional_routing_b64(path: str) -> str | None:
+    if not path:
+        return None
+    if not os.path.exists(path):
+        return None
+    return compact_json_b64(load_json_file(path))
+
+def happ_routing_link(path: str | None = None) -> str | None:
+    value = optional_routing_b64(path or HAPP_ROUTING_FILE)
+    if not value:
+        return None
+    return "happ://routing/onadd/" + value
+
+def v2raytun_routing_value(path: str | None = None) -> str | None:
+    return optional_routing_b64(path or V2RAYTUN_ROUTING_FILE)
+
+def load_raw_metadata_config() -> dict[str, str]:
+    config = dict(RAW_METADATA_DEFAULTS)
+    if not SUB_METADATA_FILE or not os.path.exists(SUB_METADATA_FILE):
+        return config
+
+    data = load_json_file(SUB_METADATA_FILE)
+    if not isinstance(data, dict):
+        raise ValueError(f"{SUB_METADATA_FILE} must be a JSON object")
+
+    aliases = {
+        "profile_title": ("profile_title", "Profile-Title", "SUB_PROFILE_TITLE"),
+        "profile_update_interval": (
+            "profile_update_interval",
+            "Profile-Update-Interval",
+            "SUB_PROFILE_UPDATE_INTERVAL",
+        ),
+        "support_url": ("support_url", "Support-Url", "SUB_SUPPORT_URL"),
+        "announce_text": ("announce_text", "Announce", "SUB_ANNOUNCE_TEXT"),
+        "announce_url": ("announce_url", "Announce-Url", "SUB_ANNOUNCE_URL"),
+        "info_text": ("info_text", "Sub-Info-Text", "SUB_INFO_TEXT"),
+        "info_color": ("info_color", "Sub-Info-Color", "SUB_INFO_COLOR"),
+        "info_button_text": ("info_button_text", "Sub-Info-Button-Text", "SUB_INFO_BUTTON_TEXT"),
+        "info_button_link": ("info_button_link", "Sub-Info-Button-Link", "SUB_INFO_BUTTON_LINK"),
+        "expire": ("expire", "Sub-Expire", "SUB_EXPIRE"),
+        "expire_button_link": ("expire_button_link", "Sub-Expire-Button-Link", "SUB_EXPIRE_BUTTON_LINK"),
+        "body_comments": ("body_comments", "body_comments_enabled", "SUB_BODY_COMMENTS"),
+        "happ_routing_file": ("happ_routing_file", "HAPP_ROUTING_FILE"),
+        "v2raytun_routing_file": ("v2raytun_routing_file", "V2RAYTUN_ROUTING_FILE"),
+    }
+
+    for target, keys in aliases.items():
+        for key in keys:
+            if key in data and data[key] is not None:
+                config[target] = str(data[key]).strip()
+                break
+    return config
+
+def raw_subscription_metadata(kind: str, userinfo_header: str, web_page_url: str) -> tuple[dict[str, str], list[str]]:
+    headers: dict[str, str] = {}
+    body_lines: list[str] = []
+
+    if kind == "generic":
+        return headers, body_lines
+
+    config = load_raw_metadata_config()
+
+    support_url = config.get("support_url", "")
+    announce_text = config.get("announce_text", "")
+    announce_url = config.get("announce_url", "") or support_url
+    info_text = config.get("info_text", "") or announce_text
+    info_button_link = config.get("info_button_link", "") or support_url
+    body_comments = optional_bool(config.get("body_comments"), False)
+
+    title = clamp_text(config.get("profile_title", ""), 25)
+    if title:
+        headers["Profile-Title"] = b64_header(title)
+
+    if config.get("profile_update_interval"):
+        headers["Profile-Update-Interval"] = config["profile_update_interval"]
+
+    if web_page_url:
+        headers["Profile-Web-Page-Url"] = web_page_url
+    if support_url:
+        headers["Support-Url"] = support_url
+    if userinfo_header:
+        headers["Subscription-Userinfo"] = userinfo_header
+
+    announce = clamp_text(announce_text, 200)
+    if announce:
+        headers["Announce"] = b64_header(announce)
+    if announce_url:
+        headers["Announce-Url"] = announce_url
+
+    clipped_info_text = clamp_text(info_text, 200)
+    if clipped_info_text:
+        headers["Sub-Info-Text"] = clipped_info_text
+        info_color = config.get("info_color", "").lower()
+        if info_color in {"red", "blue", "green"}:
+            headers["Sub-Info-Color"] = info_color
+        if config.get("info_button_text"):
+            headers["Sub-Info-Button-Text"] = clamp_text(config["info_button_text"], 25)
+        if info_button_link:
+            headers["Sub-Info-Button-Link"] = info_button_link
+
+    if config.get("expire"):
+        headers["Sub-Expire"] = config["expire"]
+        if config.get("expire_button_link"):
+            headers["Sub-Expire-Button-Link"] = config["expire_button_link"]
+
+    if kind == "happ":
+        routing = happ_routing_link(config.get("happ_routing_file"))
+        if routing:
+            headers["Routing"] = routing
+            headers["Routing-Enable"] = "1"
+    elif kind == "v2raytun":
+        routing = v2raytun_routing_value(config.get("v2raytun_routing_file"))
+        if routing:
+            headers["Routing"] = routing
+
+    if body_comments:
+        for key, value in headers.items():
+            body_lines.append(f"#{key.lower()}: {value}")
+        if kind == "happ" and "Routing" in headers:
+            body_lines.append(headers["Routing"])
+
+    return headers, body_lines
+
 # ---------------- HTML ----------------
 HTML_TEMPLATE_FILE = env("HTML_TEMPLATE_FILE", os.path.join(BASE_DIR, "web_template.html"))
 I18N_FILE = env("I18N_FILE", os.path.join(BASE_DIR, "web_i18n.json"))
@@ -842,19 +1037,51 @@ class H(BaseHTTPRequestHandler):
 
             # Клиенты: всегда отдаём "сырой" ответ (base64 или ошибка)
             if fmt == "base64":
-                out = (body or "").encode("utf-8")
+                client_kind = raw_client_kind(self.headers, self.path)
+                page_url = public_url(self.headers, sub_id)
+                try:
+                    extra_headers, body_prefix_lines = raw_subscription_metadata(
+                        client_kind,
+                        userinfo_agg["header"],
+                        page_url,
+                    )
+                except Exception as e:
+                    out = f"subscription metadata error: {e}\n".encode("utf-8")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(out)))
+                    self.end_headers()
+                    if send_body:
+                        self.wfile.write(out)
+                    return
+
+                response_body = body or ""
+                if status == 200 and body_prefix_lines and lines is not None:
+                    response_body = lines_to_b64(body_prefix_lines + lines)
+
+                out = response_body.encode("utf-8")
                 self.send_response(status if status else 502)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
+                if client_kind in {"happ", "v2raytun"}:
+                    self.send_header("Content-Disposition", 'attachment; filename="sub"')
 
                 # важное: агрегированный трафик
                 self.send_header("Subscription-Userinfo", userinfo_agg["header"])
 
                 # остальные полезные заголовки — с любого нормального hdrs
+                protected_headers = {k.lower() for k in extra_headers}
+                protected_headers.add("subscription-userinfo")
                 for hk, hv in pick_some_headers(any_hdrs).items():
-                    self.send_header(hk, hv)
+                    if hk.lower() not in protected_headers:
+                        self.send_header(hk, hv)
+
+                for hk, hv in extra_headers.items():
+                    if hk.lower() != "subscription-userinfo":
+                        self.send_header(hk, hv)
 
                 # web-page-url на merge
-                self.send_header("Profile-Web-Page-Url", public_url(self.headers, sub_id))
+                if "profile-web-page-url" not in protected_headers:
+                    self.send_header("Profile-Web-Page-Url", page_url)
 
                 self.send_header("Content-Length", str(len(out)))
                 self.end_headers()

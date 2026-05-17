@@ -126,13 +126,6 @@ rule-providers:
     interval: 3600
     url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ads-all.yaml
     path: ./ruleset/category-ads-all.yaml
-  tracker:
-    type: http
-    behavior: domain
-    format: yaml
-    interval: 3600
-    url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tracker.yaml
-    path: ./ruleset/tracker.yaml
   private:
     type: http
     behavior: domain
@@ -148,13 +141,6 @@ rules:
   - PROCESS-NAME,Deluge,DIRECT
   - PROCESS-NAME,WebTorrent,DIRECT
   - PROCESS-NAME,PicoTorrent.exe,DIRECT
-  - RULE-SET,tracker,REJECT
-  - DOMAIN,cp.cloudflare.com,DIRECT
-  - DOMAIN-SUFFIX,msftconnecttest.com,DIRECT
-  - DOMAIN-SUFFIX,msftncsi.com,DIRECT
-  - DOMAIN-SUFFIX,captive.apple.com,DIRECT
-  - DOMAIN,detectportal.firefox.com,DIRECT
-  - DOMAIN-SUFFIX,networkcheck.kde.org,DIRECT
   - RULE-SET,private,DIRECT
   - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
   - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
@@ -166,7 +152,6 @@ rules:
   - IP-CIDR6,fc00::/7,DIRECT,no-resolve
   - IP-CIDR6,fe80::/10,DIRECT,no-resolve
   - RULE-SET,category-ads-all,REJECT
-  - DOMAIN-SUFFIX,tribute.tg,🌍 2. Выбор локации
   - PROCESS-NAME,com.newword.medved.bbb,DIRECT
   - PROCESS-NAME,com.avito.android,DIRECT
   - PROCESS-NAME,ru.alfabank.mobile.android,DIRECT
