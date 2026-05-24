@@ -393,6 +393,12 @@ def public_url_with_query(self_headers, sub_id: str, query: dict[str, str] | Non
         return base + "?" + urlencode(query)
     return base
 
+def url_with_query(url: str, query: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    pairs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    pairs.update(query)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(pairs), parsed.fragment))
+
 def decode_b64_plain_list(s: str):
     s = (s or "").strip()
     if not s:
@@ -860,6 +866,42 @@ def raw_subscription_metadata(kind: str, userinfo_header: str, web_page_url: str
 
     return headers, body_lines
 
+def web_routing_links() -> dict[str, str]:
+    try:
+        config = load_raw_metadata_config()
+    except Exception:
+        return {}
+
+    out: dict[str, str] = {}
+    try:
+        happ = happ_routing_link(config.get("happ", {}).get("routing"))
+        if happ:
+            out["happ"] = happ
+    except Exception:
+        pass
+
+    try:
+        v2raytun = v2raytun_routing_value(config.get("v2raytun", {}).get("routing"))
+        if v2raytun:
+            out["v2raytun"] = "v2raytun://import_route/" + v2raytun
+    except Exception:
+        pass
+
+    return out
+
+def web_client_config(sub_id: str, sub_url: str) -> dict:
+    return {
+        "subId": sub_id,
+        "urls": {
+            "base": sub_url,
+            "base64": url_with_query(sub_url, {"format": "base64"}),
+            "happ": url_with_query(sub_url, {"format": "happ"}),
+            "v2raytun": url_with_query(sub_url, {"format": "v2raytun"}),
+            "mihomo": url_with_query(sub_url, {"format": "mihomo"}),
+        },
+        "routing": web_routing_links(),
+    }
+
 # ---------------- HTML ----------------
 HTML_TEMPLATE_FILE = env("HTML_TEMPLATE_FILE", os.path.join(BASE_DIR, "web_template.html"))
 I18N_FILE = env("I18N_FILE", os.path.join(BASE_DIR, "web_i18n.json"))
@@ -934,6 +976,7 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
         USERINFO=html.escape(userinfo_agg["header"]),
         LINKS=str(len(lines) if lines else 0),
         I18N_JSON=json.dumps(i18n, ensure_ascii=False),
+        CLIENTS_CONFIG=json.dumps(web_client_config(sub_id, sub_url), ensure_ascii=False),
         LANG_OPTIONS=render_language_options(i18n),
         KIND=json.dumps(
             userinfo_agg["kind"]

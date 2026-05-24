@@ -197,6 +197,58 @@ class FormatRoutingTests(unittest.TestCase):
             "https://example.com/sub-merge/abc_123?format=base64",
         )
 
+    def test_url_with_query_preserves_and_overrides_query(self):
+        self.assertEqual(
+            submerge.url_with_query("https://example.com/sub-merge/demo?format=html&x=1", {"format": "base64"}),
+            "https://example.com/sub-merge/demo?format=base64&x=1",
+        )
+
+    def test_web_client_config_forces_import_formats(self):
+        config = submerge.web_client_config("demo", "https://example.com/sub-merge/demo")
+
+        self.assertEqual(config["urls"]["base"], "https://example.com/sub-merge/demo")
+        self.assertEqual(config["urls"]["base64"], "https://example.com/sub-merge/demo?format=base64")
+        self.assertEqual(config["urls"]["happ"], "https://example.com/sub-merge/demo?format=happ")
+        self.assertEqual(config["urls"]["v2raytun"], "https://example.com/sub-merge/demo?format=v2raytun")
+        self.assertEqual(config["urls"]["mihomo"], "https://example.com/sub-merge/demo?format=mihomo")
+
+    def test_web_client_config_includes_routing_deeplinks_from_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "sub_metadata.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "happ": {"routing": {"Name": "Happ"}},
+                        "v2raytun": {"routing": {"name": "v2RayTun"}},
+                    },
+                    f,
+                )
+
+            submerge.SUB_METADATA_FILE = path
+            config = submerge.web_client_config("demo", "https://example.com/sub-merge/demo")
+
+        self.assertTrue(config["routing"]["happ"].startswith("happ://routing/onadd/"))
+        self.assertTrue(config["routing"]["v2raytun"].startswith("v2raytun://import_route/"))
+
+    def test_web_launcher_uses_curated_clients_and_download_links(self):
+        out = submerge.render_html(
+            "demo",
+            "https://example.com/sub-merge/demo",
+            "dmxlc3M6Ly9leGFtcGxlLmNvbQo=",
+            ["vless://example.com#NL"],
+            {"header": "upload=0; download=0; total=0", "kind": "unlimited", "total": 0, "used": 0, "remain": 0},
+            None,
+        )
+
+        self.assertIn("Throne", out)
+        self.assertIn("throneproj/Throne/refs/heads/dev/res/Throne.ico", out)
+        self.assertIn("clientDownload", out)
+        self.assertIn("https://github.com/throneproj/Throne/releases", out)
+        self.assertIn("client-action-primary", out)
+        self.assertIn("client-action-secondary", out)
+        self.assertNotIn("Hiddify", out)
+        self.assertNotIn("hiddify://", out)
+
     def test_render_mihomo_config_uses_safe_id_and_provider_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "mihomo.yaml")

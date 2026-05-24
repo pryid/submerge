@@ -17,9 +17,39 @@ h1{margin:0 0 6px;font-size:18px}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .btn{border:1px solid var(--s);background:var(--c);color:var(--t);padding:10px 12px;border-radius:12px;cursor:pointer;font-size:13px}
 .btn:hover{background:rgba(255,255,255,.09)}
+.btn.primary{background:rgba(60,180,220,.18);border-color:rgba(90,220,255,.32)}
 .panel{margin-top:14px;border:1px solid var(--s);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)}
 .hd{padding:12px 14px;border-bottom:1px solid var(--s);display:flex;justify-content:space-between;color:var(--m);font-size:13px}
 .bd{padding:10px;max-height:64vh;overflow:auto}
+.clientbd{padding:12px;display:grid;gap:12px}
+.platforms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media(min-width:720px){.platforms{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.platform{border:1px solid var(--s);background:rgba(255,255,255,.025);color:var(--m);padding:9px 8px;border-radius:14px;cursor:pointer;font-size:12px;display:flex;gap:7px;align-items:center;justify-content:center;min-height:40px}
+.platform svg{width:17px;height:17px;flex:0 0 auto}
+.platform.active{background:rgba(90,220,255,.14);border-color:rgba(90,220,255,.36);color:var(--t);box-shadow:inset 0 0 0 1px rgba(90,220,255,.08)}
+.recommended{border:1px solid rgba(90,220,255,.28);background:linear-gradient(135deg,rgba(34,211,238,.13),rgba(255,255,255,.025));border-radius:18px;padding:14px;display:grid;gap:12px}
+.clientgrid{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:720px){.clientgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.client{border:1px solid var(--s);background:rgba(255,255,255,.025);border-radius:16px;padding:12px;display:grid;gap:10px}
+.clienthead{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:center;min-width:0}
+.clientname{font-weight:650;font-size:14px;line-height:1.2}
+.clientmeta{color:var(--m);font-size:12px;line-height:1.35;margin-top:3px}
+.appicon{width:42px;height:42px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.06);display:grid;place-items:center;color:rgba(255,255,255,.9);font-weight:800;font-size:15px;letter-spacing:.02em;box-shadow:inset 0 0 20px rgba(255,255,255,.03);overflow:hidden;padding:2px}
+.appicon svg{width:24px;height:24px}
+.appicon img{width:100%;height:100%;object-fit:contain;display:block;border-radius:8px}
+.appicon-happ{background:linear-gradient(135deg,rgba(34,211,238,.26),rgba(255,255,255,.05))}
+.appicon-mihomo{background:linear-gradient(135deg,rgba(99,102,241,.26),rgba(255,255,255,.05))}
+.appicon-raw{background:linear-gradient(135deg,rgba(32,201,151,.20),rgba(255,255,255,.05))}
+.clientactions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}
+.clientactions .btn{width:100%;min-width:0;min-height:40px;padding:9px 10px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15;white-space:normal;overflow-wrap:anywhere}
+.clientactions .client-action-primary{grid-column:1/-1}
+@media(max-width:420px){.clientactions{grid-template-columns:1fr}}
+.sectionTitle{color:var(--m);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.routebox{border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(0,0,0,.10);overflow:hidden}
+.routebox summary{border:0;padding:9px 10px;font-size:12px;color:var(--m)}
+.routebox .clientactions{padding:0 10px 10px}
+.routehint{margin:0;padding:0 10px 10px;color:var(--m);font-size:12px;line-height:1.35}
+.empty{color:var(--m);font-size:13px;padding:4px 2px}
 .row{width:100%;text-align:left;border:1px solid var(--s);background:rgba(255,255,255,.03);color:var(--t);padding:10px;border-radius:14px;cursor:pointer;display:grid;gap:8px;margin-bottom:10px}
 .row:hover{background:rgba(255,255,255,.06)}
 .name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -70,6 +100,16 @@ summary::-webkit-details-marker{display:none}
   </div>
 
   <div class="panel">
+    <div class="hd"><div id="clientsLbl"></div><div id="clientPlatformLbl"></div></div>
+    <div class="clientbd">
+      <div class="platforms" id="platformTabs"></div>
+      <div id="recommendedClient"></div>
+      <div class="sectionTitle" id="otherClientsLbl"></div>
+      <div class="clientgrid" id="clientGrid"></div>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="hd"><div id="listLbl"></div><div id="hint"></div></div>
     <div class="bd" id="list">$ITEMS</div>
   </div>
@@ -89,8 +129,69 @@ const SUB_URL = $SUBURL_JS;
 const LINKS = $LINKS;
 const UI = { kind:$KIND, total:$TOTAL, used:$USED, remain:$REMAIN };
 const I18N = $I18N_JSON;
+const APP = $CLIENTS_CONFIG;
 const LANGS = Object.keys(I18N);
 const FALLBACK_LANG = LANGS[0] || "";
+const PLATFORMS = [
+  { id:"ios", label:"iOS", icon:"apple" },
+  { id:"android", label:"Android", icon:"android" },
+  { id:"windows", label:"Windows", icon:"windows" },
+  { id:"macos", label:"macOS", icon:"apple" },
+  { id:"linux", label:"Linux", icon:"linux" },
+  { id:"androidTV", label:"TV", icon:"android" }
+];
+const RECOMMENDED = {
+  ios:"Happ",
+  android:"Happ",
+  windows:"Happ",
+  macos:"Happ",
+  linux:"Koala Clash",
+  androidTV:"Happ"
+};
+const DOWNLOADS = {
+  happIos:"https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
+  happAndroid:"https://play.google.com/store/apps/details?id=com.happproxy",
+  happDesktop:"https://github.com/Happ-proxy/happ-desktop/releases",
+  v2Ios:"https://apps.apple.com/us/app/v2raytun/id6476628951",
+  v2Android:"https://play.google.com/store/apps/details?id=com.v2raytun.android",
+  shadowrocket:"https://apps.apple.com/us/app/shadowrocket/id932747118",
+  streisand:"https://apps.apple.com/us/app/streisand/id6450534064",
+  koala:"https://github.com/coolcoala/koala-clash/releases",
+  flclash:"https://github.com/chen08209/FlClash/releases",
+  throne:"https://github.com/throneproj/Throne/releases"
+};
+const CLIENTS = {
+  ios: [
+    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happIos, route:"happ" },
+    { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", open:()=>`v2raytun://import/${APP.urls.v2raytun}`, download:DOWNLOADS.v2Ios, route:"v2raytun" },
+    { name:"Shadowrocket", icon:"sr", kind:"raw", desc:"clientDescRaw", open:()=>`shadowrocket://add/${APP.urls.base64}#${encodeURIComponent(APP.subId||"sub")}`, download:DOWNLOADS.shadowrocket },
+    { name:"Streisand", icon:"st", kind:"raw", desc:"clientDescRaw", open:()=>`streisand://import/${APP.urls.base64}`, download:DOWNLOADS.streisand }
+  ],
+  android: [
+    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happAndroid, route:"happ" },
+    { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", open:()=>`v2raytun://import/${APP.urls.v2raytun}`, download:DOWNLOADS.v2Android, route:"v2raytun" }
+  ],
+  windows: [
+    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happDesktop, route:"happ" },
+    { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo", open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.koala },
+    { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual", copy:()=>APP.urls.base64, download:DOWNLOADS.throne }
+  ],
+  macos: [
+    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happDesktop, route:"happ" },
+    { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", open:()=>`v2raytun://import/${APP.urls.v2raytun}`, download:DOWNLOADS.v2Ios, route:"v2raytun" },
+    { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo", open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.koala },
+    { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual", copy:()=>APP.urls.base64, download:DOWNLOADS.throne }
+  ],
+  linux: [
+    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happDesktop, route:"happ" },
+    { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo", open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.koala },
+    { name:"FlClashX", icon:"fl", kind:"mihomo", desc:"clientDescMihomo", open:()=>`flclashx://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.flclash },
+    { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual", copy:()=>APP.urls.base64, download:DOWNLOADS.throne }
+  ],
+  androidTV: [
+    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happAndroid, route:"happ" }
+  ]
+};
 
 function gb(b){ return (b/1000000000).toFixed(2); }
 function fmt(template, vars){
@@ -124,8 +225,15 @@ const copyAllEl = byId("copyAll");
 const copyRawEl = byId("copyRaw");
 const chipLinksEl = byId("chipLinks");
 const chipRemainingEl = byId("chipRemaining");
+const clientsLblEl = byId("clientsLbl");
+const clientPlatformLblEl = byId("clientPlatformLbl");
+const platformTabsEl = byId("platformTabs");
+const recommendedClientEl = byId("recommendedClient");
+const otherClientsLblEl = byId("otherClientsLbl");
+const clientGridEl = byId("clientGrid");
 const rawEl = byId("raw");
 const langSel = byId("langSel");
+let currentPlatform = detectPlatform();
 
 function apply(lang){
   const t=strings(lang);
@@ -140,6 +248,9 @@ function apply(lang){
   if (copyRawEl) copyRawEl.textContent=tx(t, "copyRaw");
   if (chipLinksEl) chipLinksEl.textContent=fmt(tx(t, "links"), {n: LINKS});
   if (chipRemainingEl) chipRemainingEl.textContent=remText(lang);
+  if (clientsLblEl) clientsLblEl.textContent=tx(t, "clients");
+  if (otherClientsLblEl) otherClientsLblEl.textContent=tx(t, "clientOther");
+  renderClientLauncher(lang);
 }
 function toast(msg){
   const t=byId("toast");
@@ -172,6 +283,124 @@ function browserLang(){
   }
   return FALLBACK_LANG;
 }
+function detectPlatform(){
+  const ua=String(navigator.userAgent||"").toLowerCase();
+  if (/iphone|ipad|ipod/.test(ua)) return "ios";
+  if (/android/.test(ua) && /tv|aft|smart-tv|googletv/.test(ua)) return "androidTV";
+  if (/android/.test(ua)) return "android";
+  if (/windows/.test(ua)) return "windows";
+  if (/macintosh|mac os/.test(ua)) return "macos";
+  if (/linux|x11/.test(ua)) return "linux";
+  return "windows";
+}
+function platformLabel(id){
+  const item=PLATFORMS.find((p)=>p.id===id);
+  return item ? item.label : id;
+}
+function iconSvg(name){
+  const icons={
+    apple:'<svg viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04c-2.04.027-3.91 1.183-4.961 3.014c-2.117 3.675-.546 9.103 1.519 12.09c1.013 1.454 2.208 3.09 3.792 3.039c1.52-.065 2.09-.987 3.935-.987c1.831 0 2.35.987 3.96.948c1.637-.026 2.676-1.48 3.676-2.948c1.156-1.688 1.636-3.325 1.662-3.415c-.039-.013-3.182-1.221-3.22-4.857c-.026-3.04 2.48-4.494 2.597-4.559c-1.429-2.09-3.623-2.324-4.39-2.376c-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83c-1.207.052-2.662.805-3.532 1.818c-.78.896-1.454 2.338-1.273 3.714c1.338.104 2.715-.688 3.559-1.701"/></svg>',
+    android:'<svg viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M18.44 5.559q-1.015 1.748-2.028 3.498q-.055-.023-.111-.043a12.1 12.1 0 0 0-8.68.033C7.537 8.897 5.868 6.026 5.6 5.56a1 1 0 0 0-.141-.19a1.104 1.104 0 0 0-1.768 1.298c1.947 3.37-.096-.216 1.948 3.36c.017.03-.495.263-1.393 1.017C2.9 12.176.452 14.772 0 18.99h24a11.7 11.7 0 0 0-.746-3.068a12.1 12.1 0 0 0-2.74-4.184a12 12 0 0 0-2.131-1.687c.66-1.122 1.312-2.256 1.965-3.385a1.11 1.11 0 0 0-.008-1.12a1.1 1.1 0 0 0-.852-.532c-.522-.054-.939.313-1.049.545m-.04 8.46c.395.593.324 1.331-.156 1.65c-.48.32-1.188.1-1.582-.493s-.324-1.33.156-1.65c.473-.316 1.182-.11 1.582.494m-11.193-.492c.48.32.55 1.058.156 1.65c-.394.593-1.103.815-1.584.495c-.48-.32-.55-1.058-.156-1.65c.4-.603 1.109-.811 1.584-.495"/></svg>',
+    windows:'<svg viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M0 0h11.377v11.372H0Zm12.623 0H24v11.372H12.623ZM0 12.623h11.377V24H0Zm12.623 0H24V24H12.623"/></svg>',
+    linux:'<svg viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M12.504 0q-.232 0-.48.021c-4.226.333-3.105 4.807-3.17 6.298c-.076 1.092-.3 1.953-1.05 3.02c-.885 1.051-2.127 2.75-2.716 4.521c-.278.832-.41 1.684-.287 2.489a.4.4 0 0 0-.11.135c-.26.268-.45.6-.663.839c-.199.199-.485.267-.797.4c-.313.136-.658.269-.864.68c-.09.189-.136.394-.132.602c0 .199.027.4.055.536c.058.399.116.728.04.97c-.249.68-.28 1.145-.106 1.484c.174.334.535.47.94.601c.81.2 1.91.135 2.774.6c.926.466 1.866.67 2.616.47c.526-.116.97-.464 1.208-.946c.587-.003 1.23-.269 2.26-.334c.699-.058 1.574.267 2.577.2c.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071s1.592-.536 2.257-1.306c.631-.765 1.683-1.084 2.378-1.503c.348-.199.629-.469.649-.853c.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926c-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.36.36 0 0 0-.19-.064c.431-1.278.264-2.55-.173-3.694c-.533-1.41-1.465-2.638-2.175-3.483c-.796-1.005-1.576-1.957-1.56-3.368c.026-2.152.236-6.133-3.544-6.139M12 5.17c.332 0 .733.065 1.216.399c.293.2.523.269 1.052.468c.255.136.405.266.478.399a.57.57 0 0 1 .016.47c-.123.31-.516.643-1.063.842c-.268.135-.501.333-.775.465c-.276.135-.588.292-1.012.267a1.1 1.1 0 0 1-.448-.067a4 4 0 0 1-.322-.198c-.195-.135-.363-.332-.612-.465c-.4-.246-.616-.512-.686-.71q-.104-.403.193-.6c.224-.135.38-.271.483-.336c.104-.074.143-.102.176-.131c.169-.202.436-.47.839-.601c.139-.036.294-.065.466-.065z"/></svg>',
+    tv:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6" width="17" height="11.5" rx="2"/><path d="M8 21h8M12 17.5V21M9 3l3 3 3-3"/></svg>',
+    nodes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8 15.8 7.2M8.2 13.2l7.6 3.6"/></svg>'
+  };
+  return icons[name] || icons.nodes;
+}
+const APP_ICON_URLS = {
+  happ:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/ec/a7/2a/eca72a0e-f731-2df8-c6b6-4c465b2d034d/AppIcon-0-0-1x_U007epad-0-1-0-85-220.png/100x100bb.jpg",
+  v2:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/dc/17/de/dc17de36-3c79-0d89-aca3-09e2b600ed25/AppIcon-0-0-1x_U007epad-0-1-85-220.png/100x100bb.jpg",
+  sr:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/26/c4/be/26c4beea-5872-dbe8-8a5b-613893c2e94e/AppIcon-0-0-1x_U007epad-0-1-0-sRGB-85-220.png/100x100bb.jpg",
+  st:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/a5/e3/19/a5e31997-25cc-0ac6-c025-ecef2550e1c0/AppIcon-0-0-1x_U007epad-0-0-0-1-0-85-220.png/100x100bb.jpg",
+  koala:"https://raw.githubusercontent.com/coolcoala/koala-clash/main/build/icon.png",
+  fl:"https://raw.githubusercontent.com/chen08209/FlClash/main/assets/images/icon.png",
+  th:"https://raw.githubusercontent.com/throneproj/Throne/refs/heads/dev/res/Throne.ico"
+};
+const APP_ICON_SVGS = {
+  th:'<svg viewBox="0 0 48 48" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m23.836 35.274l9.062-9.502c.536-.562.66-1.401.308-2.094l-8.542-16.8c-.554-1.09-2.113-1.09-2.667 0l-8.542 16.8c-.352.693-.228 1.532.308 2.094l9.062 9.502c.592.62 1.588.62 2.18 0Zm-10.79 6.452h21.908M18.066 23.87l11.869-.002M20.64 17.624h6.72"/></svg>',
+  clash:'<svg viewBox="0 0 48 48" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M15.1 35.17H5.686m9.282 2.993l-8.846 3.163M24 16.874c.801 0 2.551.202 3.428 1.08c.878.878 1.08 2.628 1.08 3.429v3.874c0 .8-.202 2.55-1.08 3.428c-.877.878-2.627 1.08-3.428 1.08s-2.551-.202-3.428-1.08c-.878-.877-1.08-2.627-1.08-3.428v-3.874c0-.8.202-2.551 1.08-3.428c.877-.878 2.627-1.08 3.428-1.08Zm8.9 18.296h9.414m-9.282 2.993l8.846 3.163M15.1 12.83H5.686m9.282-2.993l-8.846-3.163m26.778 6.156h9.414m-9.282-2.993l8.846-3.163M24 4.5v7.495m0 24.01V43.5"/></svg>'
+};
+function appIcon(client){
+  const cls=client.kind==="mihomo" ? "appicon-mihomo" : client.icon==="happ" ? "appicon-happ" : "appicon-raw";
+  const url=APP_ICON_URLS[client.icon];
+  if (url) return `<span class="appicon ${cls}"><img src="${escapeAttr(url)}" alt="" loading="lazy" referrerpolicy="no-referrer"/></span>`;
+  const svg=APP_ICON_SVGS[client.icon] || APP_ICON_SVGS.clash;
+  return `<span class="appicon ${cls}">${svg}</span>`;
+}
+function manualImportUrl(client){
+  if (client.copy) return client.copy();
+  if (client.kind==="mihomo") return APP.urls.mihomo;
+  if (client.route==="happ") return APP.urls.happ;
+  if (client.route==="v2raytun") return APP.urls.v2raytun;
+  return APP.urls.base64;
+}
+function openExternal(url){
+  if (!url) return;
+  window.location.href=url;
+}
+function recommendedClient(clients){
+  const name=RECOMMENDED[currentPlatform];
+  return clients.find((client)=>client.name===name) || clients[0] || null;
+}
+function renderRouteBox(client, t){
+  const route=client.route && APP.routing ? APP.routing[client.route] : "";
+  if (!route) return "";
+  return `<details class="routebox">
+    <summary>${tx(t, "clientAdvanced")}</summary>
+    <p class="routehint">${tx(t, "clientRouteHint")}</p>
+    <div class="clientactions">
+      <button class="btn client-action" type="button" data-open="${escapeAttr(route)}">${tx(t, "clientRoute")}</button>
+      <button class="btn client-action" type="button" data-copy="${escapeAttr(route)}">${tx(t, "clientRouteCopy")}</button>
+    </div>
+  </details>`;
+}
+function renderClientCard(client, t, featured){
+  const open=client.open ? client.open() : "";
+  const copy=manualImportUrl(client);
+  const openBtn=open ? `<button class="btn primary client-action client-action-primary" type="button" data-open="${escapeAttr(open)}">${tx(t, "clientOpen")}</button>` : "";
+  const copyBtn=`<button class="btn client-action client-action-secondary" type="button" data-copy="${escapeAttr(copy)}">${tx(t, client.copy ? "clientCopyOnly" : "clientCopy")}</button>`;
+  const downloadBtn=client.download ? `<button class="btn client-action client-action-secondary" type="button" data-open="${escapeAttr(client.download)}">${tx(t, "clientDownload")}</button>` : "";
+  const intro=featured ? `<div class="sectionTitle">${tx(t, "clientRecommended")}</div>` : "";
+  const cls=featured ? "recommended" : "client";
+  return `<div class="${cls}">
+    ${intro}
+    <div class="clienthead">
+      ${appIcon(client)}
+      <div><div class="clientname">${escapeHtml(client.name)}</div><div class="clientmeta">${tx(t, client.desc || "clientDescRaw")}</div></div>
+    </div>
+    <div class="clientactions">${openBtn}${copyBtn}${downloadBtn}</div>
+    ${renderRouteBox(client,t)}
+  </div>`;
+}
+function renderClientLauncher(lang){
+  const t=strings(lang);
+  if (clientPlatformLblEl) clientPlatformLblEl.textContent=platformLabel(currentPlatform);
+  if (platformTabsEl) {
+    platformTabsEl.innerHTML=PLATFORMS.map((p)=>(
+      `<button class="platform ${p.id===currentPlatform?"active":""}" type="button" data-platform="${p.id}">${iconSvg(p.icon)}<span>${p.label}</span></button>`
+    )).join("");
+  }
+  if (!clientGridEl || !recommendedClientEl) return;
+  const clients=CLIENTS[currentPlatform] || [];
+  if (!clients.length) {
+    recommendedClientEl.innerHTML="";
+    if (otherClientsLblEl) otherClientsLblEl.style.display="none";
+    clientGridEl.innerHTML=`<div class="empty">${tx(t, "clientEmpty")}</div>`;
+    return;
+  }
+  const rec=recommendedClient(clients);
+  const other=clients.filter((client)=>client!==rec);
+  recommendedClientEl.innerHTML=rec ? renderClientCard(rec,t,true) : "";
+  if (otherClientsLblEl) otherClientsLblEl.style.display=other.length ? "block" : "none";
+  clientGridEl.innerHTML=other.map((client)=>renderClientCard(client,t,false)).join("");
+}
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g,(ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
+}
+function escapeAttr(value){
+  return escapeHtml(value).replace(/`/g,"&#96;");
+}
 let stored="";
 try { stored=(localStorage.getItem("lang")||"").toLowerCase(); } catch(_) {}
 const auto=browserLang();
@@ -189,6 +418,29 @@ if (langSel) {
 
 document.addEventListener("click", async (e)=>{
   if (!(e.target instanceof Element)) return;
+  const platform=e.target.closest("button.platform");
+  if (platform) {
+    currentPlatform=platform.getAttribute("data-platform") || currentPlatform;
+    renderClientLauncher((langSel && langSel.value) || auto);
+    return;
+  }
+  const action=e.target.closest("button.client-action");
+  if (action) {
+    const lang=(langSel && langSel.value) || auto;
+    const t=strings(lang);
+    const copy=action.getAttribute("data-copy") || "";
+    const open=action.getAttribute("data-open") || "";
+    if (copy) {
+      const ok=await copyText(copy);
+      toast(ok?tx(t, "ok"):tx(t, "fail"));
+      return;
+    }
+    if (open) {
+      openExternal(open);
+      toast(tx(t, "clientOpening"));
+      return;
+    }
+  }
   const b=e.target.closest("button.row"); if(!b) return;
   const ok=await copyText(b.getAttribute("data-copy")||"");
   const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
