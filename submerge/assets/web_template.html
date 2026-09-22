@@ -359,7 +359,7 @@ const CLIENTS = {
   ]
 };
 
-function gb(b){ return (b/1000000000).toFixed(2); }
+function gib(b){ return (b/(1024 ** 3)).toFixed(2); }
 function fmt(template, vars){
   let out=String(template||"");
   Object.entries(vars||{}).forEach(([k,v])=>{
@@ -378,7 +378,7 @@ function remText(lang){
   if (!UI) return tx(t, "no");
   if (UI.kind==="unlimited") return tx(t, "unlim");
   if (UI.kind!=="limited" && UI.kind!=="limited_partial") return tx(t, "no");
-  return fmt(tx(t, "lim"), {remain:gb(UI.remain||0), total:gb(UI.total||0), used:gb(UI.used||0)});
+  return fmt(tx(t, "lim"), {remain:gib(UI.remain||0), total:gib(UI.total||0), used:gib(UI.used||0)});
 }
 function expiryText(value, lang){
   const t=strings(lang);
@@ -411,8 +411,8 @@ function renderSources(lang){
       body.textContent=tx(t,"noSourceStats");
     } else {
       const ui=source.userinfo;
-      const total=ui.total===null?"—":ui.total===0?"∞":gb(ui.total)+" GB";
-      body.textContent=fmt(tx(t,"sourceTraffic"),{upload:gb(ui.upload),download:gb(ui.download),total})
+      const total=ui.total===null?"—":ui.total===0?"∞":gib(ui.total)+" GiB";
+      body.textContent=fmt(tx(t,"sourceTraffic"),{upload:gib(ui.upload),download:gib(ui.download),total})
         +" · "+expiryText(ui.expire,lang);
     }
     row.append(body); list.append(row);
@@ -435,10 +435,10 @@ function renderUsage(lang){
   if (block) block.classList.remove("is-empty");
   const total=UI.total||0, used=UI.used||0, remain=Math.max(0, UI.remain||0);
   const pct=Math.min(100, Math.max(0, used/total*100));
-  if (chipRemainingEl) chipRemainingEl.innerHTML=gb(remain)+' <span class="unit">GB</span>';
-  if (chipLinksEl) chipLinksEl.textContent="/ "+gb(total)+" GB";
+  if (chipRemainingEl) chipRemainingEl.innerHTML=gib(remain)+' <span class="unit">GiB</span>';
+  if (chipLinksEl) chipLinksEl.textContent="/ "+gib(total)+" GiB";
   if (fill){ fill.style.width=pct.toFixed(1)+"%"; fill.classList.toggle("warn", pct>=85); }
-  if (sub) sub.textContent=gb(used)+" GB · "+linksText;
+  if (sub) sub.textContent=gib(used)+" GiB · "+linksText;
 }
 const byId = (id) => document.getElementById(id);
 const titleEl = byId("t");

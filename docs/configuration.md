@@ -75,9 +75,10 @@ that all servers stop working on that date. Submerge does not remove links based
 on this metadata.
 
 The browser shows the nearest expiry, days remaining, and a collapsible breakdown
-of uploaded/downloaded traffic, quota and expiry per source. Missing expiry or
-unavailable sources mark the summary as incomplete. Unavailable sources do not
-appear to have zero usage.
+of uploaded/downloaded traffic, quota and expiry per source. Traffic and quotas
+are displayed in GiB (1024³ bytes); subscription headers retain the original byte
+counts. Missing expiry or unavailable sources mark the summary as incomplete.
+Unavailable sources do not appear to have zero usage.
 Source labels use the same names as their connections,
 listing distinct names in subscription order. Unavailable or unsupported sources
 fall back to their configuration number. Upstream URLs, query tokens and credentials
