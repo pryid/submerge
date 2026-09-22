@@ -319,21 +319,13 @@ const APP = $CLIENTS_CONFIG;
 const LANGS = Object.keys(I18N);
 const FALLBACK_LANG = LANGS[0] || "";
 const PLATFORMS = [
-  { id:"ios", label:"iOS", icon:"apple" },
-  { id:"android", label:"Android", icon:"android" },
-  { id:"windows", label:"Windows", icon:"windows" },
-  { id:"macos", label:"macOS", icon:"apple" },
-  { id:"linux", label:"Linux", icon:"linux" },
-  { id:"androidTV", label:"TV", icon:"android" }
+  { id:"ios", label:"iOS", icon:"apple", clients:["happ","v2","sr","st"] },
+  { id:"android", label:"Android", icon:"android", clients:["happ","v2"] },
+  { id:"windows", label:"Windows", icon:"windows", clients:["happ","koala","th"] },
+  { id:"macos", label:"macOS", icon:"apple", clients:["happ","v2","koala","th"] },
+  { id:"linux", label:"Linux", icon:"linux", clients:["happ","koala","fl","th"], recommended:"koala" },
+  { id:"androidTV", label:"TV", icon:"android", clients:["happ"] }
 ];
-const RECOMMENDED = {
-  ios:"Happ",
-  android:"Happ",
-  windows:"Happ",
-  macos:"Happ",
-  linux:"Koala Clash",
-  androidTV:"Happ"
-};
 const DOWNLOADS = {
   happIos:"https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
   happAndroid:"https://play.google.com/store/apps/details?id=com.happproxy",
@@ -347,36 +339,23 @@ const DOWNLOADS = {
   throne:"https://github.com/throneproj/Throne/releases"
 };
 const CLIENTS = {
-  ios: [
-    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happIos, route:"happ" },
-    { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", open:()=>`v2raytun://import/${APP.urls.v2raytun}`, download:DOWNLOADS.v2Ios, route:"v2raytun" },
-    { name:"Shadowrocket", icon:"sr", kind:"raw", desc:"clientDescRaw", open:()=>`shadowrocket://add/${APP.urls.base64}#${encodeURIComponent(APP.subId||"sub")}`, download:DOWNLOADS.shadowrocket },
-    { name:"Streisand", icon:"st", kind:"raw", desc:"clientDescRaw", open:()=>`streisand://import/${APP.urls.base64}`, download:DOWNLOADS.streisand }
-  ],
-  android: [
-    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happAndroid, route:"happ" },
-    { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", open:()=>`v2raytun://import/${APP.urls.v2raytun}`, download:DOWNLOADS.v2Android, route:"v2raytun" }
-  ],
-  windows: [
-    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happDesktop, route:"happ" },
-    { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo", open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.koala },
-    { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual", copy:()=>APP.urls.base64, download:DOWNLOADS.throne }
-  ],
-  macos: [
-    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happDesktop, route:"happ" },
-    { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", open:()=>`v2raytun://import/${APP.urls.v2raytun}`, download:DOWNLOADS.v2Ios, route:"v2raytun" },
-    { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo", open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.koala },
-    { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual", copy:()=>APP.urls.base64, download:DOWNLOADS.throne }
-  ],
-  linux: [
-    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happDesktop, route:"happ" },
-    { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo", open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.koala },
-    { name:"FlClashX", icon:"fl", kind:"mihomo", desc:"clientDescMihomo", open:()=>`flclashx://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:DOWNLOADS.flclash },
-    { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual", copy:()=>APP.urls.base64, download:DOWNLOADS.throne }
-  ],
-  androidTV: [
-    { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", open:()=>`happ://add/${APP.urls.happ}`, download:DOWNLOADS.happAndroid, route:"happ" }
-  ]
+  happ: { name:"Happ", icon:"happ", kind:"raw", desc:"clientDescHapp", route:"happ",
+    open:()=>`happ://add/${APP.urls.happ}`,
+    download:{ios:DOWNLOADS.happIos,android:DOWNLOADS.happAndroid,androidTV:DOWNLOADS.happAndroid,default:DOWNLOADS.happDesktop} },
+  v2: { name:"V2RayTun", icon:"v2", kind:"raw", desc:"clientDescRoute", route:"v2raytun",
+    open:()=>`v2raytun://import/${APP.urls.v2raytun}`,
+    download:{android:DOWNLOADS.v2Android,default:DOWNLOADS.v2Ios} },
+  sr: { name:"Shadowrocket", icon:"sr", kind:"raw", desc:"clientDescRaw",
+    open:()=>`shadowrocket://add/${APP.urls.base64}#${encodeURIComponent(APP.subId||"sub")}`,
+    download:{default:DOWNLOADS.shadowrocket} },
+  st: { name:"Streisand", icon:"st", kind:"raw", desc:"clientDescRaw",
+    open:()=>`streisand://import/${APP.urls.base64}`, download:{default:DOWNLOADS.streisand} },
+  koala: { name:"Koala Clash", icon:"koala", kind:"mihomo", desc:"clientDescMihomo",
+    open:()=>`koala-clash://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:{default:DOWNLOADS.koala} },
+  fl: { name:"FlClashX", icon:"fl", kind:"mihomo", desc:"clientDescMihomo",
+    open:()=>`flclashx://install-config?url=${encodeURIComponent(APP.urls.mihomo)}`, download:{default:DOWNLOADS.flclash} },
+  th: { name:"Throne", icon:"th", kind:"raw", desc:"clientDescManual",
+    copy:()=>APP.urls.base64, download:{default:DOWNLOADS.throne} }
 };
 
 function gib(b){ return (b/(1024 ** 3)).toFixed(2); }
@@ -648,10 +627,6 @@ function openExternal(url){
   if (!url) return;
   window.location.href=url;
 }
-function recommendedClient(clients){
-  const name=RECOMMENDED[currentPlatform];
-  return clients.find((client)=>client.name===name) || clients[0] || null;
-}
 function renderRouteBox(client, t){
   const route=client.route && APP.routing ? APP.routing[client.route] : "";
   if (!route) return "";
@@ -669,7 +644,8 @@ function renderClientCard(client, t, featured){
   const copy=manualImportUrl(client);
   const openBtn=open ? `<button class="btn primary client-action client-action-primary" type="button" data-open="${escapeAttr(open)}">${tx(t, "clientOpen")}</button>` : "";
   const copyBtn=`<button class="btn client-action client-action-secondary" type="button" data-copy="${escapeAttr(copy)}">${tx(t, client.copy ? "clientCopyOnly" : "clientCopy")}</button>`;
-  const downloadBtn=client.download ? `<button class="btn client-action client-action-secondary" type="button" data-open="${escapeAttr(client.download)}">${tx(t, "clientDownload")}</button>` : "";
+  const download=client.download[currentPlatform] || client.download.default;
+  const downloadBtn=download ? `<button class="btn client-action client-action-secondary" type="button" data-open="${escapeAttr(download)}">${tx(t, "clientDownload")}</button>` : "";
   const intro=featured ? `<div class="sectionTitle">${tx(t, "clientRecommended")}</div>` : "";
   const cls=featured ? "recommended" : "client";
   return `<div class="card ${cls}">
@@ -691,14 +667,15 @@ function renderClientLauncher(lang){
     )).join("");
   }
   if (!clientGridEl || !recommendedClientEl) return;
-  const clients=CLIENTS[currentPlatform] || [];
+  const platform=PLATFORMS.find((p)=>p.id===currentPlatform);
+  const clients=(platform?.clients || []).map((id)=>CLIENTS[id]);
   if (!clients.length) {
     recommendedClientEl.innerHTML="";
     if (otherClientsLblEl) otherClientsLblEl.style.display="none";
     clientGridEl.innerHTML=`<div class="empty">${tx(t, "clientEmpty")}</div>`;
     return;
   }
-  const rec=recommendedClient(clients);
+  const rec=CLIENTS[platform.recommended] || clients[0];
   const other=clients.filter((client)=>client!==rec);
   recommendedClientEl.innerHTML=rec ? renderClientCard(rec,t,true) : "";
   if (otherClientsLblEl) otherClientsLblEl.style.display=other.length ? "block" : "none";
