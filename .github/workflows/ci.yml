@@ -1,0 +1,76 @@
+name: Test and publish image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: make check
+
+  image:
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build runtime image
+        run: |
+          docker build --pull -f Containerfile -t submerge:ci \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" .
+      - name: Test runtime image with local upstreams
+        run: |
+          docker pull docker.io/library/nginx:stable-alpine
+          python3 -m unittest -v tests.test_http
+        env:
+          SUBMERGE_TEST_IMAGE: submerge:ci
+          SUBMERGE_TEST_NGINX_IMAGE: docker.io/library/nginx:stable-alpine
+          CONTAINER_ENGINE: docker
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested image
+        if: github.event_name == 'push'
+        env:
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${REPOSITORY,,}"
+          tags=("sha-${GITHUB_SHA}")
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tags+=("${GITHUB_REF_NAME}")
+            if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              tags+=(stable)
+            fi
+          else
+            tags+=(main)
+          fi
+          for tag in "${tags[@]}"; do
+            docker tag submerge:ci "$image:$tag"
+            docker push "$image:$tag"
+          done
