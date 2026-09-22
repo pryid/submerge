@@ -2,17 +2,26 @@
 
 ## Setup
 
-Run commands from the repository root with Python 3.12+:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and run
+commands from the repository root. `.python-version` selects Python 3.12;
+uv creates `.venv` and can download Python if needed:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-make check PYTHON=.venv/bin/python
+uv sync --locked
+make check
 ```
 
-`requirements.txt` contains runtime dependencies. `requirements-dev.txt` adds the
-pinned Ruff version used in CI. `pyproject.toml` defines Python formatting and
-lint rules; `.editorconfig` defines basic whitespace settings.
+`pyproject.toml` declares runtime dependencies and the `dev` group, which includes
+Ruff. `uv.lock` records resolved versions and hashes across platforms; commit it
+with dependency changes. `--locked` rejects stale locks instead of updating them.
+The project runs directly from source (`package = false`); its placeholder package
+version is unrelated to Git release tags and the displayed build SHA.
+Ruff rules live in `pyproject.toml`; `.editorconfig` defines basic whitespace settings.
+
+Use `uv add <package>` or `uv add --dev <tool>` to add dependencies. To update a
+pinned dependency, use e.g. `uv add 'qrcode==<version>'`, then run code and image
+checks. `uv lock --upgrade-package <name>` updates within the declared constraints.
+Use `uv run --locked python -m submerge` to start the local service.
 
 ## Commands
 
@@ -24,7 +33,8 @@ lint rules; `.editorconfig` defines basic whitespace settings.
 | `make image` | Build `localhost/submerge:test` with Podman |
 | `make test-image` | Run HTTP tests against the image and nginx |
 
-Pass `PYTHON=.venv/bin/python` for the virtual environment. `ENGINE=docker` switches
+Python targets use `uv run --locked python` by default. Override `UV=...` or
+`PYTHON=...` when needed. `ENGINE=docker` switches
 container commands to Docker. `IMAGE=...` selects another build/test tag.
 `make test-image` tests an existing image; run `make image` after code changes.
 `make image` passes the current HEAD as the `BUILD_REVISION` build argument;
@@ -53,7 +63,7 @@ Run only the container integration tests directly:
 ```bash
 SUBMERGE_TEST_IMAGE=localhost/submerge:test \
 SUBMERGE_TEST_NGINX_IMAGE=docker.io/library/nginx:stable-alpine \
-CONTAINER_ENGINE=podman .venv/bin/python -m unittest -v tests.test_http
+CONTAINER_ENGINE=podman uv run --locked python -m unittest -v tests.test_http
 ```
 
 ## CI and dependencies
@@ -67,14 +77,24 @@ OCI archives. A separate job loads both archives and publishes their manifest wi
 `redhat-actions/podman-login` and `redhat-actions/push-to-registry`. Images enter the
 registry only after both architectures pass.
 
-Pip downloads are cached. Tested image archives use an exact commit/architecture
+The test job uses pinned `setup-uv` with a download cache keyed by `uv.lock`.
+It retains `setup-python` to use the runner's available Python 3.12.
+Image jobs run the standard-library host test harness with `PYTHON=python3`;
+the application dependencies come from the image being tested.
+Tested image archives use an exact commit/architecture
 cache key, with no fallback keys; only publishing runs save image caches. PR jobs
 have no registry write permission. Artifacts expire after one day. If GitHub has
 evicted an image cache, the workflow rebuilds it and repeats the same checks.
 
-Actions are pinned to commits and the Python base to a multiarch digest.
+The Containerfile installs only runtime dependencies with `uv sync --locked --no-dev`
+in a build stage, using the base image's Python. The final stage copies `/opt/venv`
+and the application; uv, Ruff and the build cache stay out of the runtime image.
+It starts with `python -m submerge`, so startup never installs dependencies.
+
+Actions are pinned to commits; Python and uv images use multiarch digests.
+Keep the uv version in `ci.yml` and the Containerfile aligned when updating the tool.
 Dependabot proposes weekly updates for Actions, the Containerfile and Python
-dependencies. Review/merge these updates to receive base-image security fixes;
+dependencies through its `uv` ecosystem. Review/merge these updates to receive base-image security fixes;
 rerunning an unchanged commit does not update its pinned Python base. To update
 it manually, obtain the **index** digest with
 `skopeo inspect --raw docker://docker.io/library/python:3.12-alpine | sha256sum`,
@@ -105,7 +125,7 @@ account for mutable config and DNS caches and retain stable merge order.
 
 Keep deployment data in ignored filenames or `local/`. Commit only neutral
 examples. The build context allows package modules, named assets and runtime
-requirements; tests, docs and local configs do not enter the image.
+dependency metadata; tests, docs and local configs do not enter the image.
 
 The browser template is plain HTML/CSS/JavaScript with Python `string.Template`
 placeholders and no frontend build step. Translations live in

@@ -12,25 +12,25 @@ in `docs/`.
 
 ## Build, Test, and Development Commands
 
-Use Python 3.12+ from the repository root:
+Use uv from the repository root; `.python-version` selects Python 3.12:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
+uv sync --locked
 cp examples/sub_bases.example.json sub_bases.json
-.venv/bin/python -m submerge
+uv run --locked python -m submerge
 ```
 
 Edit the copied configuration before fetching subscriptions. The default port is
 `18080`; `/healthz` checks the HTTP process.
 
-- `make check PYTHON=.venv/bin/python`: run Ruff, formatting checks, shell syntax checks, and tests.
-- `make format PYTHON=.venv/bin/python`: apply Ruff fixes and formatting.
-- `make test PYTHON=.venv/bin/python`: run the unittest suite.
+- `make check`: run Ruff, formatting checks, shell syntax checks, and tests through uv.
+- `make format`: apply Ruff fixes and formatting.
+- `make test`: run the unittest suite.
 - `make image`: build `localhost/submerge:test` using Podman.
-- `make test-image PYTHON=.venv/bin/python`: test an existing image with nginx.
+- `make test-image`: test an existing image with nginx.
 
 Rebuild before testing image changes. Override `IMAGE=...` or `ENGINE=docker` as needed.
+Keep dependency declarations in `pyproject.toml` and commit the matching `uv.lock`.
 
 ## Coding Style & Naming Conventions
 

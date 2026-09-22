@@ -9,12 +9,13 @@ configuration files; code, Python dependencies and default templates live in the
 
 ## Run locally
 
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
+
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
+uv sync --locked
 cp examples/sub_bases.example.json sub_bases.json
 # Edit sub_bases.json with your upstream URLs before requesting a subscription.
-.venv/bin/python -m submerge
+uv run --locked python -m submerge
 ```
 
 The service listens on port `18080`. `/healthz` checks the local HTTP server;
@@ -52,9 +53,9 @@ the [deployment guide](docs/deployment.md#publish-the-image).
 ## Development
 
 ```bash
-make check PYTHON=.venv/bin/python
+make check
 make image
-make test-image PYTHON=.venv/bin/python
+make test-image
 ```
 
 See [development and testing](docs/development.md) and the
