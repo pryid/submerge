@@ -1,0 +1,26 @@
+[Unit]
+Description=Submerge subscription service
+PartOf=main-pod.service
+Wants=main-pod.service
+After=main-pod.service
+
+[Container]
+Image=ghcr.io/pryid/submerge:stable
+Pod=main.pod
+AutoUpdate=registry
+Volume=/etc/submerge:/config:ro,Z
+ReadOnly=true
+
+# nginx shares main.pod's network namespace; no PublishPort is needed.
+Environment=LISTEN_HOST=127.0.0.1
+# Enable only when /etc/submerge/link_rewrites.json exists.
+# Environment=SUB_LINK_REWRITES_FILE=/config/link_rewrites.json
+# Optional custom Mihomo profile (the image includes the default template).
+# Environment=MIHOMO_TEMPLATE_FILE=/config/mihomo.yaml
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

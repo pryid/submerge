@@ -1,0 +1,10 @@
+# Only application code, bundled assets and runtime dependencies enter the build.
+**
+!Containerfile
+!requirements.txt
+!submerge/
+!submerge/*.py
+!submerge/assets/
+!submerge/assets/web_template.html
+!submerge/assets/web_i18n.json
+!submerge/assets/mihomo_template.yaml
