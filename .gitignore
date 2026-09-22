@@ -27,6 +27,7 @@ Desktop.ini
 # Tooling caches
 .ruff_cache/
 .mypy_cache/
+.ci-images/
 
 # Local deployment config with real upstreams and rewrite targets
 /local/

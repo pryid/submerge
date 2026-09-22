@@ -33,6 +33,7 @@ container commands to Docker. `IMAGE=...` selects another build/test tag.
 - `tests/test_config.py`: validation, reloads and recovery.
 - `tests/test_service.py`: negotiation, metadata, rewrites and rendering.
 - `tests/test_http.py`: actual HTTP process, local upstream fixtures and optional containers.
+- `tests/test_ci.py`: documentation filtering, manual publication and release ordering.
 
 The HTTP suite checks merged links, traffic totals, partial-source policy,
 formats, QR, HEAD/errors, config replacement and nginx query forwarding. All
@@ -46,6 +47,35 @@ SUBMERGE_TEST_IMAGE=localhost/submerge:test \
 SUBMERGE_TEST_NGINX_IMAGE=docker.io/library/nginx:stable-alpine \
 CONTAINER_ENGINE=podman .venv/bin/python -m unittest -v tests.test_http
 ```
+
+## CI and dependencies
+
+The `test` job always runs. `scripts/ci.py` decides whether image jobs are needed;
+only changes confined to `README.md` and `docs/` skip them. Native amd64/arm64 jobs
+build with `redhat-actions/buildah-build`, run the HTTP suite with nginx and export
+OCI archives. A separate job loads both archives and publishes their manifest with
+`redhat-actions/podman-login` and `redhat-actions/push-to-registry`. Images enter the
+registry only after both architectures pass.
+
+Pip downloads are cached. Tested image archives use an exact commit/architecture
+cache key, with no fallback keys; only publishing runs save image caches. PR jobs
+have no registry write permission. Artifacts expire after one day. If GitHub has
+evicted an image cache, the workflow rebuilds it and repeats the same checks.
+
+Actions are pinned to commits and the Python base to a multiarch digest.
+Dependabot proposes weekly updates for Actions, the Containerfile and Python
+dependencies. Review/merge these updates to receive base-image security fixes;
+rerunning an unchanged commit does not update its pinned Python base. To update
+it manually, obtain the **index** digest with
+`skopeo inspect --raw docker://docker.io/library/python:3.12-alpine | sha256sum`,
+replace the `FROM` digest and run image tests before releasing.
+
+Publication uses `concurrency.queue: max` to serialize releases without dropping
+pending jobs. This is [supported by GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency),
+but actionlint 1.7.12 does not yet recognize the `queue` key. Until it supports
+that field, lint the workflow with the narrow exception
+`actionlint -ignore 'unexpected key "queue" for "concurrency" section'`.
+Do not remove the queue just to satisfy the old linter.
 
 ## Code layout
 

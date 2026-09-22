@@ -25,14 +25,16 @@ The previous `python submerge.py` entry point remains available.
 
 The [deployment guide](docs/deployment.md) covers `main.pod`, nginx, migration,
 updates and rollback. The [workflow](.github/workflows/ci.yml) checks code, runs
-tests, builds the image and tests it with nginx before publishing to GHCR:
+tests, builds native amd64/arm64 images with Red Hat Actions and tests each with
+nginx before publishing one multiarch image to GHCR:
 
 | Git event | Image tags |
 | --- | --- |
-| Pull request or manual run | Checks only |
-| Push to `main` | `main`, `sha-<commit>` |
-| Release tag `vX.Y.Z` | `vX.Y.Z`, `sha-<commit>`, `stable` |
+| Pull request | Checks only |
+| Push to `main` | `main`, `sha-<commit>` (except documentation-only changes) |
+| Release tag `vX.Y.Z` | `vX.Y.Z`, `sha-<commit>`; highest release also updates `stable` |
 | Prerelease tag `vX.Y.Z-rc.N` | Version and commit tags only |
+| Manual run | Checks; optional publication from `main` or a release tag |
 
 After pushing the project changes, publish with an unused release tag:
 
@@ -41,8 +43,10 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The supplied Quadlet follows `ghcr.io/pryid/submerge:stable`. The workflow currently
-builds `linux/amd64`. Set the GHCR package to **Public** for anonymous server pulls.
+The supplied Quadlet follows `ghcr.io/pryid/submerge:stable`. Podman selects
+`linux/amd64` or `linux/arm64` automatically. Set the GHCR package to **Public** for
+anonymous server pulls. Manual publication and release ordering are described in
+the [deployment guide](docs/deployment.md#publish-the-image).
 
 ## Development
 
@@ -64,7 +68,7 @@ See [development and testing](docs/development.md) and the
 | `tests/` | Unit, HTTP and container integration tests |
 | `deploy/` | Quadlet and nginx examples |
 | `examples/` | Neutral JSON configuration examples |
-| `scripts/` | Live endpoint smoke test |
+| `scripts/` | CI release policy and live endpoint smoke test |
 | `docs/` | Configuration, deployment and development guides |
 
 Keep real upstream URLs, rewrite targets and client profiles in ignored local

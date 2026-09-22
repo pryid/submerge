@@ -2,20 +2,49 @@
 
 ## Publish the image
 
-The workflow builds `linux/amd64` and uses GitHub's `GITHUB_TOKEN` with
-`packages: write`; no custom publishing secret is required. Pull requests and
-manual runs only validate. Pushes to `main` publish `main` and a commit tag.
-Release tags matching `vX.Y.Z` also update `stable`.
+The workflow builds and tests `linux/amd64` and `linux/arm64` on native runners.
+Red Hat Actions use Buildah to build and Podman to publish a single multiarch
+manifest. GitHub's `GITHUB_TOKEN` has `packages: write` only in the publication job;
+no custom publishing secret is required. Pull requests only validate.
 
 1. Push the project changes to GitHub.
 2. Push an unused release tag, for example `v1.0.0`.
-3. Wait for both workflow jobs to pass, including container tests with nginx.
+3. Wait for tests, both architecture jobs and publication to pass.
 4. Set the GHCR package visibility to **Public** for anonymous server pulls.
 
 The image is named `ghcr.io/<repository-owner>/submerge`. Forks must update the
 owner in [submerge.container](../deploy/submerge.container). Private packages
 require persistent Podman credentials for the service and auto-update user.
 Keep release tags immutable. OCI labels record the repository and commit.
+
+Pushes to `main` publish `main` and `sha-<commit>`. Changes confined to `README.md`
+and `docs/` run code checks/tests but skip image jobs. A release tag or manual run
+always runs image checks, including after documentation-only changes.
+
+For manual publication, open **Actions → Test and publish image → Run workflow**,
+select `main` and enable **publish**. This updates `main`, not `stable`. To publish
+an existing release tag, select that tag as the workflow ref (or use
+`gh workflow run ci.yml --ref vX.Y.Z -f publish=true`). The selected ref must
+already contain the new workflow. Leave **publish** unchecked for validation only;
+feature branches cannot publish. Prefer a new release tag for production updates.
+
+Only the highest stable version among the current remote Git tags may update
+`stable`; version comparison is numeric (`v1.10.0` is newer than `v1.9.0`). Older
+versions still receive their version/commit tags. Prereleases never update or
+block `stable`. Invalid versions, including `+build` metadata unsupported in
+container tags, fail before building. A removed or moved release tag fails before
+publication. The `main` alias updates only if the commit is still the branch head.
+
+Publications share a queue and do not cancel each other. The release policy is
+checked inside this queue using fresh remote refs. If the newest release fails
+tests, `stable` stays on the previous published release: fix/retry the newest
+release or publish a higher version. Keep pushed release tags unchanged and do
+not delete them. Check the publication job's summary for tags and digest.
+
+Images cached for the same commit/architecture are reused and tested again on
+release runs. Cache misses rebuild normally; simultaneous main/tag runs may both
+build. Native ARM runners require repository/account support for
+`ubuntu-24.04-arm`. The server Quadlet and config paths work with either architecture.
 
 ## Server files
 
