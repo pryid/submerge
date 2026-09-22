@@ -493,12 +493,11 @@ def rewrite_subscription_lines(lines: list[str]) -> list[str]:
 
 
 def parse_userinfo_one(h: str):
-    # upload=...; download=...; total=...
-    d = {"upload": 0, "download": 0, "total": None}
+    d = {"upload": 0, "download": 0, "total": None, "expire": None}
     if not h:
         return d
     for p in re.split(r"[;,]\s*", h.strip()):
-        m = re.match(r"([A-Za-z_]+)\s*=\s*(\d+)", p)
+        m = re.fullmatch(r"([A-Za-z_]+)\s*=\s*(\d+)\s*", p)
         if not m:
             continue
         k = m.group(1).lower()
@@ -507,6 +506,8 @@ def parse_userinfo_one(h: str):
             d[k] = v
         elif k == "total":
             d["total"] = v
+        elif k == "expire" and v <= 253402300799:  # Last second of year 9999.
+            d["expire"] = v
     return d
 
 
@@ -516,13 +517,15 @@ def aggregate_userinfo(headers_list: list[dict]):
     totals = []
     missing_total = False
     unlimited = False
+    expiries = []
 
     for hdr in headers_list:
-        h = hdr.get("subscription-userinfo") or hdr.get("Subscription-Userinfo") or ""
+        h = next((v for k, v in hdr.items() if k.lower() == "subscription-userinfo"), "")
+        ui = parse_userinfo_one(h)
+        expiries.append(ui["expire"])
         if not h:
             missing_total = True
             continue
-        ui = parse_userinfo_one(h)
         uploads += int(ui.get("upload", 0))
         downloads += int(ui.get("download", 0))
         t = ui.get("total", None)
@@ -554,6 +557,11 @@ def aggregate_userinfo(headers_list: list[dict]):
         remain = 0
         hdr_out = f"upload={uploads}; download={downloads}"
 
+    dated = [value for value in expiries if value is not None and value > 0]
+    expire = min(dated) if dated else (0 if expiries and all(v == 0 for v in expiries) else None)
+    if expire is not None:
+        hdr_out += f"; expire={expire}"
+
     return {
         "kind": kind,
         "upload": uploads,
@@ -563,6 +571,8 @@ def aggregate_userinfo(headers_list: list[dict]):
         "remain": remain,
         "header": hdr_out,
         "missing_total": missing_total,
+        "expire": expire,
+        "expiry_complete": bool(expiries) and all(v is not None for v in expiries),
     }
 
 
@@ -653,13 +663,26 @@ def pick_some_headers(h: dict):
 
 def merge_from_all(sub_id: str):
     """
-    Return status, body, passthrough headers, parsed lines, note and source headers.
+    Return status, body, headers, lines, note, traffic headers and per-source statistics.
     """
     results = []
 
+    sources = []
     for index, base in enumerate(current_sub_bases(), 1):
         url = source_url(base, sub_id)
         code, body, hdrs = fetch(url)
+        available = code == 200 and bool(body.strip())
+        sources.append(
+            {
+                "index": index,
+                "available": available,
+                "status": code,
+                "has_userinfo": any(
+                    k.lower() == "subscription-userinfo" and v for k, v in hdrs.items()
+                ),
+                "userinfo": aggregate_userinfo([hdrs]) if available else None,
+            }
+        )
         results.append((f"Source {index}", code, body, hdrs))
 
     ok = [(b, c, body, h) for (b, c, body, h) in results if c == 200 and body.strip()]
@@ -669,13 +692,13 @@ def merge_from_all(sub_id: str):
         # Prefer the first actual HTTP error over a synthetic gateway error.
         for _b, c, body, hdrs in results:
             if c not in (0, 200):
-                return c, (body or ""), (hdrs or {}), None, None, [hdrs]
+                return c, (body or ""), (hdrs or {}), None, None, [hdrs], sources
         # Network failures and empty 200 responses provide no usable subscription.
-        return 502, "", {}, None, "No usable upstream responses", []
+        return 502, "", {}, None, "No usable upstream responses", [], sources
 
     bad = [(b, c) for (b, c, body, _h) in results if c != 200 or not body.strip()]
     if bad and not ALLOW_PARTIAL:
-        return 502, "Some sources unavailable", {}, None, None, []
+        return 502, "Some sources unavailable", {}, None, None, [], sources
 
     # Decode every successful response before merging.
     decoded_sets = []
@@ -691,6 +714,7 @@ def merge_from_all(sub_id: str):
                 None,
                 "Non-plain format detected, using first successful as-is",
                 [x[3] for x in ok],
+                sources,
             )
 
         decoded_sets.append(rewrite_subscription_lines(lines))
@@ -712,7 +736,7 @@ def merge_from_all(sub_id: str):
         )
 
     h0 = ok[0][3]
-    return 200, lines_to_b64(merged), h0, merged, note, [x[3] for x in ok]
+    return 200, lines_to_b64(merged), h0, merged, note, [x[3] for x in ok], sources
 
 
 def load_mihomo_template() -> Template:
@@ -970,7 +994,9 @@ def render_language_options(i18n: dict) -> str:
     return "\n".join(items)
 
 
-def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg, note: str | None):
+def render_html(
+    sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg, note: str | None, sources=None
+):
     html_template = load_html_template()
     i18n = load_i18n()
     qr = qr_svg_data_uri(sub_url)
@@ -1042,4 +1068,11 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
         TOTAL=("null" if userinfo_agg["total"] is None else str(int(userinfo_agg["total"]))),
         USED=str(int(userinfo_agg["used"])),
         REMAIN=str(int(userinfo_agg["remain"])),
+        EXPIRY=json.dumps(
+            {
+                "expire": userinfo_agg.get("expire"),
+                "complete": userinfo_agg.get("expiry_complete", False),
+            }
+        ),
+        SOURCES_JSON=json.dumps(sources or []).replace("<", "\\u003c"),
     )

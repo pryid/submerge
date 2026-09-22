@@ -39,8 +39,11 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
                 return self.respond(404)
 
             fmt = service.response_format(self.headers, self.path)
-            status, body, any_hdrs, lines, note, hdrs_for_userinfo = service.merge_from_all(sub_id)
+            status, body, any_hdrs, lines, note, hdrs_for_userinfo, sources = (
+                service.merge_from_all(sub_id)
+            )
             userinfo = service.aggregate_userinfo(hdrs_for_userinfo)
+            userinfo["expiry_complete"] &= all(source["available"] for source in sources)
             if fmt in {"html", "mihomo"} and status in (400, 404):
                 return self.respond(404)
 
@@ -76,7 +79,7 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
                     body = service.lines_to_b64(prefix + lines)
                 return self.respond(status, body or "", headers=headers)
 
-            page = service.render_html(sub_id, page_url, body, lines or [], userinfo, note)
+            page = service.render_html(sub_id, page_url, body, lines or [], userinfo, note, sources)
             return self.respond(status, page, "text/html; charset=utf-8")
         except (BrokenPipeError, ConnectionResetError):
             return

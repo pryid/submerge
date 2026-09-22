@@ -158,6 +158,10 @@ cursor:pointer;display:grid;gap:6px;margin-bottom:8px;transition:border-color .1
 .config-row{margin-bottom:8px;display:grid;gap:6px}
 .config-row .row{margin-bottom:0}
 .config-row>a{justify-self:start}
+.expiry{margin-top:8px;font-size:12px;color:var(--m)}
+.source-list{padding:0 16px 12px}
+.source-row{padding:12px 0;border-top:1px solid var(--line);font-size:12px;color:var(--m);overflow-wrap:anywhere}
+.source-row strong{display:block;color:var(--t);margin-bottom:4px}
 .build-revision{margin-top:24px;text-align:center;color:var(--mm);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
 .row-action{font-size:11.5px;color:var(--ac)}
 .name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -231,6 +235,7 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
         </div>
         <div class="meter"><div class="meter-fill" id="meterFill"></div></div>
         <div class="usage-sub" id="usageSub"></div>
+        <div class="expiry" id="expirySummary"></div>
       </div>
 
       <div class="actions">
@@ -247,6 +252,11 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
       <div class="qr-url">$SUBURL</div>
     </div>
   </div>
+
+  <details class="raw" id="sourceDetails" hidden>
+    <summary data-i18n="sources">Sources</summary>
+    <div class="source-list" id="sourceList"></div>
+  </details>
 
   <div class="panel">
     <div class="hd"><div class="hd-title" id="clientsLbl"></div><div class="hd-meta" id="clientPlatformLbl"></div></div>
@@ -278,6 +288,8 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
 const SUB_URL = $SUBURL_JS;
 const LINKS = $LINKS;
 const UI = { kind:$KIND, total:$TOTAL, used:$USED, remain:$REMAIN };
+const EXPIRY = $EXPIRY;
+const SOURCES = $SOURCES_JSON;
 const I18N = $I18N_JSON;
 const APP = $CLIENTS_CONFIG;
 const LANGS = Object.keys(I18N);
@@ -364,6 +376,44 @@ function remText(lang){
   if (UI.kind!=="limited" && UI.kind!=="limited_partial") return tx(t, "no");
   return fmt(tx(t, "lim"), {remain:gb(UI.remain||0), total:gb(UI.total||0), used:gb(UI.used||0)});
 }
+function expiryText(value, lang){
+  const t=strings(lang);
+  if (value === null || value === undefined) return tx(t,"expiryUnknown");
+  if (value === 0) return tx(t,"noExpiry");
+  const date=new Date(value*1000);
+  const dateText=date.toLocaleDateString(lang);
+  const days=Math.ceil((date.getTime()-Date.now())/86400000);
+  return fmt(tx(t,days<=0?"expiredOn":"expiresOn"),{date:dateText,days:Math.max(0,days)});
+}
+function renderSources(lang){
+  const t=strings(lang);
+  const expiry=byId("expirySummary");
+  let label=expiryText(EXPIRY.expire,lang);
+  if (SOURCES.length>1 && EXPIRY.expire>0) label=tx(t,"nearestExpiry")+" "+label;
+  if (!EXPIRY.complete && SOURCES.length) label+=" · "+tx(t,"partialExpiry");
+  expiry.textContent=label;
+  const details=byId("sourceDetails"), list=byId("sourceList");
+  details.hidden=!SOURCES.length;
+  list.replaceChildren();
+  SOURCES.forEach((source)=>{
+    const row=document.createElement("div"); row.className="source-row";
+    const name=document.createElement("strong");
+    name.textContent=fmt(tx(t,"sourceName"),{n:source.index});
+    row.append(name);
+    const body=document.createElement("div");
+    if (!source.available) {
+      body.textContent=tx(t,"sourceUnavailable");
+    } else if (!source.has_userinfo) {
+      body.textContent=tx(t,"noSourceStats");
+    } else {
+      const ui=source.userinfo;
+      const total=ui.total===null?"—":ui.total===0?"∞":gb(ui.total)+" GB";
+      body.textContent=fmt(tx(t,"sourceTraffic"),{upload:gb(ui.upload),download:gb(ui.download),total})
+        +" · "+expiryText(ui.expire,lang);
+    }
+    row.append(body); list.append(row);
+  });
+}
 function renderUsage(lang){
   const t=strings(lang);
   const block=byId("usageBlock");
@@ -423,6 +473,7 @@ function apply(lang){
     if (label) el.textContent=label;
   });
   renderUsage(lang);
+  renderSources(lang);
   if (clientsLblEl) clientsLblEl.textContent=tx(t, "clients");
   if (otherClientsLblEl) otherClientsLblEl.textContent=tx(t, "clientOther");
   renderClientLauncher(lang);

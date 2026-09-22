@@ -36,7 +36,18 @@
     "unlim": "Осталось: безлимит",
     "lim": "Осталось: {remain} GB из {total} GB (исп.: {used} GB)",
     "ok": "Скопировано",
-    "fail": "Не удалось"
+    "fail": "Не удалось",
+    "sources": "Статистика по источникам",
+    "sourceName": "Источник {n}",
+    "sourceUnavailable": "Источник недоступен",
+    "noSourceStats": "Статистика не передана",
+    "sourceTraffic": "Отправлено: {upload} GB · Получено: {download} GB · Лимит: {total}",
+    "expiryUnknown": "Срок действия неизвестен",
+    "noExpiry": "Без ограничения срока",
+    "expiresOn": "До {date} · осталось дней: {days}",
+    "expiredOn": "Срок истёк {date}",
+    "nearestExpiry": "Ближайшее окончание:",
+    "partialExpiry": "Данные о сроках неполные"
   },
   "en": {
     "languageName": "English",
@@ -75,6 +86,17 @@
     "unlim": "Remaining: unlimited",
     "lim": "Remaining: {remain} GB of {total} GB (used: {used} GB)",
     "ok": "Copied",
-    "fail": "Copy failed"
+    "fail": "Copy failed",
+    "sources": "Usage by source",
+    "sourceName": "Source {n}",
+    "sourceUnavailable": "Source unavailable",
+    "noSourceStats": "Usage data not provided",
+    "sourceTraffic": "Uploaded: {upload} GB · Downloaded: {download} GB · Limit: {total}",
+    "expiryUnknown": "Expiry unknown",
+    "noExpiry": "No expiry",
+    "expiresOn": "Until {date} · days left: {days}",
+    "expiredOn": "Expired on {date}",
+    "nearestExpiry": "Earliest expiry:",
+    "partialExpiry": "Expiry data is incomplete"
   }
 }

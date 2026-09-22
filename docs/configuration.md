@@ -65,6 +65,21 @@ Traffic counters are aggregated across successful upstreams.
 - If a successful body is not a supported URI list, the first successful
   upstream body is returned unchanged.
 
+### Expiry and per-source usage
+
+`Subscription-Userinfo` retains `expire` as Unix seconds. The merged value is the
+earliest known positive expiry. Zero means no expiry and is emitted only when
+every successful source explicitly reports zero; absent or invalid values remain
+unknown. This is a conservative nearest-expiry hint for clients, not a claim
+that all servers stop working on that date. Submerge does not remove links based
+on this metadata.
+
+The browser shows the nearest expiry, days remaining, and a collapsible breakdown
+of uploaded/downloaded traffic, quota and expiry per source. Missing expiry or
+unavailable sources mark the summary as incomplete. Unavailable sources do not
+appear to have zero usage. Sources are numbered in configuration order; source
+URLs, query tokens and credentials are not shown in these details or failure notes.
+
 ## Link rewrites
 
 Start with [link_rewrites.example.json](../examples/link_rewrites.example.json)

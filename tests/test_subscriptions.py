@@ -1,4 +1,4 @@
-"""Subscription source compatibility."""
+"""Subscription source compatibility and expiry accounting."""
 
 import base64
 import json
@@ -87,3 +87,60 @@ class SourcesTests(unittest.TestCase):
         self.assertEqual(result[3], [LINK, OTHER])
         self.assertEqual(service.decode_subscription_body(result[1]), ([LINK, OTHER], True))
         self.assertEqual(fetch.call_args_list[1].args, ("https://b.example.com/custom/demo",))
+        self.assertEqual([s["index"] for s in result[6]], [1, 2])
+        self.assertTrue(all(s["available"] for s in result[6]))
+
+    def test_failed_source_has_no_fabricated_usage_and_does_not_leak_url(self):
+        with (
+            patch.object(
+                service,
+                "current_sub_bases",
+                return_value=["https://a.example.com", "https://b.example.com/{id}?secret=hidden"],
+            ),
+            patch.object(service, "fetch", side_effect=[(200, LINK, {}), (503, "error", {})]),
+            patch.object(service, "current_link_rewrite_rules", return_value={}),
+            patch.object(service, "ALLOW_PARTIAL", True),
+        ):
+            result = service.merge_from_all("demo")
+        self.assertIsNone(result[6][1]["userinfo"])
+        self.assertNotIn("hidden", result[4])
+        self.assertNotIn("example.com", json.dumps(result[6]))
+
+
+class ExpiryTests(unittest.TestCase):
+    def aggregate(self, *values):
+        return service.aggregate_userinfo([{"SUBSCRIPTION-USERINFO": value} for value in values])
+
+    def test_earliest_expiry_and_traffic_are_preserved(self):
+        result = self.aggregate(
+            "upload=1; download=2; total=100; expire=1900000000",
+            "upload=3; download=4; total=200; expire=1800000000",
+        )
+        self.assertEqual(result["expire"], 1800000000)
+        self.assertEqual(result["header"], "upload=4; download=6; total=300; expire=1800000000")
+        self.assertTrue(result["expiry_complete"])
+
+    def test_no_expiry_is_distinct_from_missing_or_invalid(self):
+        for invalid in [
+            "",
+            "expire=-1",
+            "expire=garbage",
+            "expire=123oops",
+            "expire=9999999999999999",
+        ]:
+            with self.subTest(invalid=invalid):
+                result = self.aggregate(invalid)
+                self.assertIsNone(result["expire"])
+                self.assertFalse(result["expiry_complete"])
+                self.assertNotIn("expire=", result["header"])
+        result = self.aggregate("expire=0", "expire=0")
+        self.assertEqual(result["expire"], 0)
+        self.assertIn("expire=0", result["header"])
+        self.assertTrue(result["expiry_complete"])
+        self.assertIsNone(self.aggregate()["expire"])
+
+    def test_mixed_lifetimes_and_partial_metadata(self):
+        result = self.aggregate("expire=1900000000", "expire=0", "")
+        self.assertEqual(result["expire"], 1900000000)
+        self.assertFalse(result["expiry_complete"])
+        self.assertIsNone(self.aggregate("expire=0", "")["expire"])

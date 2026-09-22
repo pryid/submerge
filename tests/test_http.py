@@ -16,6 +16,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
 from tests.fixtures import AWG_CONFIG, SubscriptionHTML, vpn_link
@@ -48,11 +49,13 @@ class Upstream(BaseHTTPRequestHandler):
 
     def do_GET(self):
         type(self).calls += 1
-        source, _, sub_id = self.path.strip("/").split("/")
+        source, _, sub_id = urlparse(self.path).path.strip("/").split("/")
         status = 200
         body = base64.b64encode(LINK.encode())
         if sub_id == "awg":
             body = base64.b64encode((LINK + "\n" + vpn_link()).encode())
+        elif sub_id == "mixed" and source == "b":
+            body = (LINK + "\n" + LINK.replace("node.example.com", "other.example.com")).encode()
         elif sub_id == "missing":
             status, body = 404, b"missing"
         elif sub_id == "broken" or (sub_id == "partial" and source == "b"):
@@ -60,7 +63,10 @@ class Upstream(BaseHTTPRequestHandler):
         elif sub_id == "empty" and source == "b":
             body = b""
         self.send_response(status)
-        self.send_header("Subscription-Userinfo", "upload=1; download=2; total=100")
+        userinfo = "upload=1; download=2; total=100"
+        if sub_id == "mixed":
+            userinfo += "; expire=" + ("1900000000" if source == "a" else "1800000000")
+        self.send_header("Subscription-Userinfo", userinfo)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -265,6 +271,28 @@ class HTTPTests(unittest.TestCase):
                     self.assertEqual(headers["Profile-Title"], "base64:RGVtbw==")
                     self.assertIn("Routing", headers)
                     self.assertTrue(base64.b64decode(body).startswith(b"vless://"))
+
+    def test_template_plaintext_sources_and_expiry(self):
+        self.write_json(
+            "sub_bases.json", [self.sources[0], self.sources[1] + "/custom/{id}?format=plain"]
+        )
+        status, headers, body = request(self.url + "/sub/mixed?format=base64")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(base64.b64decode(body).decode().splitlines()), 2)
+        self.assertIn("expire=1800000000", headers["Subscription-Userinfo"])
+        self.assertIn("total=200", headers["Subscription-Userinfo"])
+        status, _, page = request(self.url + "/sub/mixed?format=html")
+        self.assertEqual(status, 200)
+        sources = json.loads(page.decode().split("const SOURCES = ", 1)[1].split(";\n", 1)[0])
+        self.assertEqual([s["userinfo"]["expire"] for s in sources], [1900000000, 1800000000])
+        self.assertTrue(all(s["available"] for s in sources))
+        self.assertIn(b'"expire": 1800000000, "complete": true', page)
+        _, _, partial_page = request(self.url + "/sub/partial?format=html")
+        partial_sources = json.loads(
+            partial_page.decode().split("const SOURCES = ", 1)[1].split(";\n", 1)[0]
+        )
+        self.assertFalse(partial_sources[1]["available"])
+        self.assertIsNone(partial_sources[1]["userinfo"])
 
     @unittest.skipUnless(
         IMAGE or importlib.util.find_spec("qrcode"), "qrcode is not installed locally"
