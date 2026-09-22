@@ -27,6 +27,13 @@ lint rules; `.editorconfig` defines basic whitespace settings.
 Pass `PYTHON=.venv/bin/python` for the virtual environment. `ENGINE=docker` switches
 container commands to Docker. `IMAGE=...` selects another build/test tag.
 `make test-image` tests an existing image; run `make image` after code changes.
+`make image` passes the current HEAD as the `BUILD_REVISION` build argument;
+override it when building exported sources. It identifies the base commit, so
+commit local changes before building a release. CI supplies its exact commit SHA.
+The image stores this value in an environment variable; Git is not needed at runtime.
+Source runs without a valid `BUILD_REVISION` hide the browser footer.
+Set `SUBMERGE_TEST_REVISION=<full-sha>` to verify the footer in image HTTP tests;
+CI sets this automatically.
 
 ## Tests
 
@@ -51,8 +58,10 @@ CONTAINER_ENGINE=podman .venv/bin/python -m unittest -v tests.test_http
 
 ## CI and dependencies
 
-The `test` job always runs. `scripts/ci.py` decides whether image jobs are needed;
-only changes confined to `README.md` and `docs/` skip them. Native amd64/arm64 jobs
+The workflow runs for PRs, release tags and manual requests; pushes to `main`
+do not trigger it. The `test` job runs on each workflow invocation.
+`scripts/ci.py` skips image jobs only for PR changes confined to `README.md` and
+`docs/`; release tags and manual runs always build/test images. Native amd64/arm64 jobs
 build with `redhat-actions/buildah-build`, run the HTTP suite with nginx and export
 OCI archives. A separate job loads both archives and publishes their manifest with
 `redhat-actions/podman-login` and `redhat-actions/push-to-registry`. Images enter the

@@ -31,16 +31,17 @@ nginx before publishing one multiarch image to GHCR:
 | Git event | Image tags |
 | --- | --- |
 | Pull request | Checks only |
-| Push to `main` | `main`, `sha-<commit>` (except documentation-only changes) |
+| Push to `main` | No automatic workflow run |
 | Release tag `vX.Y.Z` | `vX.Y.Z`, `sha-<commit>`; highest release also updates `stable` |
 | Prerelease tag `vX.Y.Z-rc.N` | Version and commit tags only |
 | Manual run | Checks; optional publication from `main` or a release tag |
 
-After pushing the project changes, publish with an unused release tag:
+After committing the project changes, push `main` and an unused release tag
+together; only the tag triggers the release workflow:
 
 ```bash
 git tag v1.0.0
-git push origin v1.0.0
+git push --atomic origin main v1.0.0
 ```
 
 The supplied Quadlet follows `ghcr.io/pryid/submerge:stable`. Podman selects

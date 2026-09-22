@@ -158,6 +158,7 @@ cursor:pointer;display:grid;gap:6px;margin-bottom:8px;transition:border-color .1
 .config-row{margin-bottom:8px;display:grid;gap:6px}
 .config-row .row{margin-bottom:0}
 .config-row>a{justify-self:start}
+.build-revision{margin-top:24px;text-align:center;color:var(--mm);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
 .row-action{font-size:11.5px;color:var(--ac)}
 .name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -268,6 +269,7 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
     <pre id="raw">$RAW</pre>
     <div class="actions" style="padding:0 16px 16px"><button class="btn" type="button" id="copyRaw"></button></div>
   </details>
+  $BUILD_FOOTER
 </div>
 
 <div class="toast" id="toast"></div>

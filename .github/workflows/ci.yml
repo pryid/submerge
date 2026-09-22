@@ -3,7 +3,6 @@ name: Test and publish image
 on:
   pull_request:
   push:
-    branches: [main]
     tags: ['v[0-9]*']
   workflow_dispatch:
     inputs:
@@ -72,6 +71,8 @@ jobs:
           containerfiles: ./Containerfile
           oci: true
           squash: false
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -91,6 +92,7 @@ jobs:
         run: make test-image
         env:
           IMAGE: localhost/submerge:ci-${{ matrix.arch }}
+          SUBMERGE_TEST_REVISION: ${{ github.sha }}
       - name: Save tested OCI image
         if: steps.cache.outputs.cache-hit != 'true' && needs.test.outputs.publish == 'true'
         run: |

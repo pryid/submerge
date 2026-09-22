@@ -14,15 +14,22 @@ from scripts.ci import changed_paths, plan, publication_tags, validate_release
 SHA = "a" * 40
 OTHER = "b" * 40
 MAIN = "refs/heads/main"
+PR = "refs/pull/1/merge"
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlanTests(unittest.TestCase):
     def test_docs_only_keep_checks_but_skip_image(self):
-        for event, ref in [("push", MAIN), ("pull_request", "refs/pull/1/merge")]:
-            with self.subTest(event=event):
+        self.assertEqual(
+            plan("pull_request", PR, False, ["README.md", "docs/deployment.md"]),
+            {"build": False, "publish": False},
+        )
+
+    def test_branch_push_does_not_build_or_publish(self):
+        for ref in [MAIN, "refs/heads/feature"]:
+            with self.subTest(ref=ref):
                 self.assertEqual(
-                    plan(event, ref, False, ["README.md", "docs/deployment.md"]),
+                    plan("push", ref, False, ["Containerfile"]),
                     {"build": False, "publish": False},
                 )
 
@@ -34,8 +41,8 @@ class PlanTests(unittest.TestCase):
         ]:
             with self.subTest(path=path):
                 self.assertEqual(
-                    plan("push", MAIN, False, ["README.md", path]),
-                    {"build": True, "publish": True},
+                    plan("pull_request", PR, False, ["README.md", path]),
+                    {"build": True, "publish": False},
                 )
 
     def test_pr_never_publishes(self):
@@ -65,7 +72,7 @@ class PlanTests(unittest.TestCase):
         )
 
     def test_unknown_changes_build_conservatively(self):
-        self.assertTrue(plan("push", MAIN, False, None)["build"])
+        self.assertTrue(plan("pull_request", PR, False, None)["build"])
         with patch("scripts.ci.git", side_effect=subprocess.CalledProcessError(128, "git")):
             self.assertIsNone(changed_paths("push", {"before": OTHER}))
         self.assertIsNone(changed_paths("push", {"before": "0" * 40}))
@@ -74,7 +81,7 @@ class PlanTests(unittest.TestCase):
         with patch("scripts.ci.git", return_value="submerge/server.py\0docs/old.py\0") as git:
             paths = changed_paths("push", {"before": OTHER})
         self.assertIn("--no-renames", git.call_args.args)
-        self.assertTrue(plan("push", MAIN, False, paths)["build"])
+        self.assertTrue(plan("pull_request", PR, False, paths)["build"])
 
     def test_empty_diff(self):
         with patch("scripts.ci.git", return_value=""):

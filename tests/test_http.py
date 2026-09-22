@@ -252,6 +252,12 @@ class HTTPTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 if fmt == "html":
                     self.assertIn(b"<!doctype html", body.lower())
+                    if revision := os.environ.get("SUBMERGE_TEST_REVISION"):
+                        self.assertIn(
+                            f'<footer class="build-revision" title="{revision}">'
+                            f"{revision[:7]}</footer>".encode(),
+                            body,
+                        )
                 elif fmt == "mihomo":
                     self.assertIn(b"proxy-providers:", body)
                     self.assertIn(b"/sub-merge/demo?format=base64", body)

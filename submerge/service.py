@@ -34,6 +34,7 @@ LISTEN_PORT = int(env("LISTEN_PORT", "18080"))
 TIMEOUT = float(env("TIMEOUT", "10"))
 ALLOW_PARTIAL = env("ALLOW_PARTIAL", "1").lower() not in ("0", "false", "no")
 PAGE_TITLE = env("PAGE_TITLE", "Sub-merge")
+BUILD_REVISION = env("BUILD_REVISION", "")
 SUB_LINK_REWRITES = os.environ.get("SUB_LINK_REWRITES", "").strip()
 SUB_LINK_REWRITES_FILE = os.environ.get("SUB_LINK_REWRITES_FILE", "").strip()
 SUB_REWRITE_DNS_TTL = float(env("SUB_REWRITE_DNS_TTL", "300"))
@@ -984,6 +985,11 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
         else '<div style="color:rgba(255,255,255,.62);padding:6px 2px">(no parsed list, see raw below)</div>'
     )
     note_html = f'<div class="note">{html.escape(note)}</div>' if note else ""
+    build_footer = (
+        f'<footer class="build-revision" title="{BUILD_REVISION}">{BUILD_REVISION[:7]}</footer>'
+        if re.fullmatch(r"[0-9a-f]{40}", BUILD_REVISION)
+        else ""
+    )
 
     return html_template.safe_substitute(
         TITLE=html.escape(PAGE_TITLE),
@@ -992,6 +998,7 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
         SUBURL_JS=json.dumps(sub_url),
         QR=qr_block,
         NOTE=note_html,
+        BUILD_FOOTER=build_footer,
         ITEMS=items_html,
         RAW=html.escape(merged_b64 or ""),
         USERINFO=html.escape(userinfo_agg["header"]),

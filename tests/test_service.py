@@ -249,6 +249,30 @@ class FormatRoutingTests(unittest.TestCase):
         self.assertNotIn("Hiddify", out)
         self.assertNotIn("hiddify://", out)
 
+    def test_browser_footer_shows_only_a_valid_build_revision(self):
+        sha = "0123456789abcdef" * 2 + "01234567"
+        for revision in [sha, "", "unknown", '"><script>alert(1)</script>']:
+            with (
+                self.subTest(revision=revision),
+                patch.object(submerge, "BUILD_REVISION", revision),
+            ):
+                page = submerge.render_html(
+                    "demo",
+                    "https://example.com/sub-merge/demo",
+                    "",
+                    [],
+                    {"header": "", "kind": "no_total", "total": None, "used": 0, "remain": 0},
+                    None,
+                )
+                if revision == sha:
+                    self.assertIn(
+                        f'<footer class="build-revision" title="{sha}">{sha[:7]}</footer>', page
+                    )
+                    self.assertGreater(page.index("<footer"), page.index('<details class="raw">'))
+                else:
+                    self.assertNotIn("<footer", page)
+                self.assertNotIn("$BUILD_FOOTER", page)
+
     def test_render_mihomo_config_uses_safe_id_and_provider_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "mihomo.yaml")

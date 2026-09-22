@@ -7,8 +7,8 @@ Red Hat Actions use Buildah to build and Podman to publish a single multiarch
 manifest. GitHub's `GITHUB_TOKEN` has `packages: write` only in the publication job;
 no custom publishing secret is required. Pull requests only validate.
 
-1. Push the project changes to GitHub.
-2. Push an unused release tag, for example `v1.0.0`.
+1. Commit the project changes and create an unused tag: `git tag v1.0.0`.
+2. Push the branch and tag together: `git push --atomic origin main v1.0.0`.
 3. Wait for tests, both architecture jobs and publication to pass.
 4. Set the GHCR package visibility to **Public** for anonymous server pulls.
 
@@ -16,13 +16,17 @@ The image is named `ghcr.io/<repository-owner>/submerge`. Forks must update the
 owner in [submerge.container](../deploy/submerge.container). Private packages
 require persistent Podman credentials for the service and auto-update user.
 Keep release tags immutable. OCI labels record the repository and commit.
+The browser page shows the image's short commit SHA at the bottom; hovering over
+it reveals the full SHA. CI embeds it during the build, so no server setting is needed.
 
-Pushes to `main` publish `main` and `sha-<commit>`. Changes confined to `README.md`
-and `docs/` run code checks/tests but skip image jobs. A release tag or manual run
-always runs image checks, including after documentation-only changes.
+Automatic runs happen only for pull requests and release tags. Pushing `main`
+does not start a workflow, so pushing the branch and one release tag together
+starts one release run. PR changes confined to `README.md` and `docs/` run code
+checks/tests but skip image jobs. Release tags and manual runs always check images.
 
 For manual publication, open **Actions → Test and publish image → Run workflow**,
-select `main` and enable **publish**. This updates `main`, not `stable`. To publish
+select `main` and enable **publish**. This publishes `main` and `sha-<commit>`
+without updating `stable`. To publish
 an existing release tag, select that tag as the workflow ref (or use
 `gh workflow run ci.yml --ref vX.Y.Z -f publish=true`). The selected ref must
 already contain the new workflow. Leave **publish** unchecked for validation only;
@@ -42,7 +46,7 @@ release or publish a higher version. Keep pushed release tags unchanged and do
 not delete them. Check the publication job's summary for tags and digest.
 
 Images cached for the same commit/architecture are reused and tested again on
-release runs. Cache misses rebuild normally; simultaneous main/tag runs may both
+release runs. Cache misses rebuild normally; simultaneous manual/tag runs may both
 build. Native ARM runners require repository/account support for
 `ubuntu-24.04-arm`. The server Quadlet and config paths work with either architecture.
 

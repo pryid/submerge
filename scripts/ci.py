@@ -29,6 +29,8 @@ def validate_release(tag):
 
 def plan(event, ref, requested, changed):
     """None means unknown changes: build conservatively. Manual/tag runs always build."""
+    if event == "push" and not ref.startswith("refs/tags/"):
+        return {"build": False, "publish": False}
     publish = event == "push" or (event == "workflow_dispatch" and requested)
     if publish:
         if ref.startswith("refs/tags/"):

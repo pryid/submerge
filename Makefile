@@ -1,6 +1,7 @@
 PYTHON ?= python3
 ENGINE ?= podman
 IMAGE ?= localhost/submerge:test
+BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 NGINX_IMAGE ?= docker.io/library/nginx:stable-alpine
 
 .PHONY: check lint format test image test-image
@@ -20,7 +21,7 @@ test:
 	$(PYTHON) -m unittest discover -s tests -v
 
 image:
-	$(ENGINE) build -f Containerfile -t $(IMAGE) .
+	$(ENGINE) build --build-arg BUILD_REVISION="$(BUILD_REVISION)" -f Containerfile -t $(IMAGE) .
 
 test-image:
 	$(ENGINE) pull $(NGINX_IMAGE)
