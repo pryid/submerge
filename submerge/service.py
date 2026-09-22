@@ -128,13 +128,28 @@ def parse_sub_bases(data, source: str = "SUB_BASES_FILE") -> list[str]:
     for idx, raw_base in enumerate(data):
         if not isinstance(raw_base, str):
             raise ValueError(f"{source}[{idx}] must be a string")
-        base = raw_base.strip().rstrip("/")
+        base = raw_base.strip()
+        if "{id}" not in base:
+            base = base.rstrip("/")
         if not base:
             raise ValueError(f"{source}[{idx}] is empty")
 
         parsed = urlparse(base)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise ValueError(f"{source}[{idx}] must be an http(s) base URL")
+        remainder = base.replace("{id}", "")
+        if (
+            "{" in remainder
+            or "}" in remainder
+            or base.count("{id}") > 1
+            or "{id}" in parsed.netloc
+            or parsed.fragment
+            or (parsed.query and "{id}" not in base)
+            or any(char.isspace() or ord(char) < 32 for char in base)
+        ):
+            raise ValueError(
+                f"{source}[{idx}] must be a base URL or URL with one {{id}} placeholder"
+            )
         bases.append(base)
 
     if not bases:
@@ -147,6 +162,12 @@ _sources = ReloadingJSON(parse_sub_bases)
 
 def current_sub_bases() -> list[str]:
     return _sources.get(SUB_BASES_FILE)
+
+
+def source_url(base: str, sub_id: str) -> str:
+    if not ID_RE.fullmatch(sub_id):
+        raise ValueError("Invalid subscription ID")
+    return base.replace("{id}", sub_id) if "{id}" in base else f"{base}/sub/{sub_id}"
 
 
 def normalize_host(host: str) -> str:
@@ -331,20 +352,27 @@ def url_with_query(url: str, query: dict[str, str]) -> str:
     )
 
 
-def decode_b64_plain_list(s: str):
-    s = (s or "").strip()
+def decode_subscription_body(s: str):
+    """Accept plaintext or standard/URL-safe base64 URI lists, not HTML/JSON."""
+    s = (s or "").strip().lstrip("\ufeff")
     if not s:
         return [], False
-    pad = "=" * (-len(s) % 4)
-    try:
-        raw = base64.b64decode(s + pad, validate=False)
-        txt = raw.decode("utf-8", errors="strict")
-        if "://" in txt:
-            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-            return lines, True
-    except Exception:
-        pass
-    return [], False
+    if "://" not in s:
+        encoded = "".join(s.split())
+        try:
+            s = (
+                base64.b64decode(encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True)
+                .decode("utf-8", errors="strict")
+                .lstrip("\ufeff")
+            )
+        except ValueError:
+            return [], False
+    lines = [ln.strip() for ln in s.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    if not lines or not all(
+        re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s<>]+", ln) for ln in lines
+    ):
+        return [], False
+    return lines, True
 
 
 def lines_to_b64(lines):
@@ -629,10 +657,10 @@ def merge_from_all(sub_id: str):
     """
     results = []
 
-    for base in current_sub_bases():
-        url = f"{base}/sub/{sub_id}"
+    for index, base in enumerate(current_sub_bases(), 1):
+        url = source_url(base, sub_id)
         code, body, hdrs = fetch(url)
-        results.append((base, code, body, hdrs))
+        results.append((f"Source {index}", code, body, hdrs))
 
     ok = [(b, c, body, h) for (b, c, body, h) in results if c == 200 and body.strip()]
 
@@ -652,7 +680,7 @@ def merge_from_all(sub_id: str):
     # Decode every successful response before merging.
     decoded_sets = []
     for _b, _c, body, _h in ok:
-        lines, ok_dec = decode_b64_plain_list(body)
+        lines, ok_dec = decode_subscription_body(body)
         if not ok_dec:
             # Preserve unsupported formats by returning the first successful body.
             h0 = ok[0][3]

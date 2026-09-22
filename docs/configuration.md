@@ -38,16 +38,31 @@ Start with [sub_bases.example.json](../examples/sub_bases.example.json):
 ]
 ```
 
-For each subscription ID, Submerge requests `<base>/sub/<id>` from every source.
-The array must be nonempty. The old comma-separated `SUB_BASES` variable is not supported.
-URL-style links in base64 responses are rewritten, merged and deduplicated in
-source order. Traffic counters are aggregated across successful upstreams.
+For each subscription ID, Submerge requests `<base>/sub/<id>` from legacy base
+URLs. To use a custom path, put exactly one `{id}` placeholder in the URL's path
+or query. Both forms can coexist:
+
+```json
+[
+  "https://de.example.com",
+  "https://fr.example.com/custom/{id}",
+  "https://nl.example.com/feed?token={id}"
+]
+```
+
+Template URLs are used as written, including their query and trailing slash.
+Fragments and unknown placeholders are rejected. The array must be nonempty.
+The old comma-separated `SUB_BASES` variable is not supported.
+Plaintext and standard/URL-safe base64 URI lists can be mixed. Blank lines and
+`#` comments are ignored; HTML/JSON bodies are not treated as link lists.
+Links are rewritten, merged and deduplicated in source order. Output remains base64.
+Traffic counters are aggregated across successful upstreams.
 
 - `ALLOW_PARTIAL=1` returns available subscriptions when some sources fail.
 - `ALLOW_PARTIAL=0` returns `502` for mixed successful and failed/empty responses.
 - If none succeed, the first upstream HTTP error is preserved, or `502` is returned
   when all responses are network failures or empty `200` bodies.
-- If a successful body is not a plain base64 link list, the first successful
+- If a successful body is not a supported URI list, the first successful
   upstream body is returned unchanged.
 
 ## Link rewrites
