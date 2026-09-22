@@ -1,295 +1,72 @@
 # Submerge
 
-Submerge is a small HTTP service that merges subscription responses from multiple upstream servers and serves:
+A small HTTP service that merges subscriptions, deduplicates proxy links, applies
+optional rewrites and aggregates traffic counters. It serves raw subscriptions,
+Mihomo profiles, Happ/v2RayTun metadata and a browser page with QR codes.
 
-- raw merged output for clients
-- Mihomo/Clash-compatible YAML profiles for Clash.Meta, Mihomo, Clash Verge, Koala, Stash, and similar clients
-- Happ/v2RayTun-compatible metadata headers, banners, and optional routing profiles for raw subscriptions
-- a browser-friendly HTML page with QR, copy actions, and traffic summary
+Production runs from a ready-to-use OCI image. The server needs only a Quadlet and
+configuration files; code, Python dependencies and default templates live in the image.
 
-## What It Does
-
-- Requests `/sub/<id>` from each upstream in `SUB_BASES_FILE`
-- Merges and de-duplicates links (when upstream response is plain base64 list)
-- Aggregates `Subscription-Userinfo` across successful upstreams
-- Returns raw response for non-browser clients
-- Returns a full Mihomo YAML profile for Mihomo-like user agents, with nodes loaded through the merged base64 provider URL
-- Adds optional Happ/v2RayTun routing and banner metadata to raw subscriptions when those clients are detected
-- Renders an HTML viewer for browser requests
-
-## Project Files
-
-- `submerge.py` - main service
-- `web_template.html` - HTML/CSS/JS template (loaded on every request)
-- `web_i18n.json` - UI localization dictionary and language list (loaded on every request)
-- `mihomo_template.yaml` - Mihomo/Clash YAML template (loaded on every YAML request)
-- `sub_metadata.example.json` - neutral hot-reload metadata, banner, and client routing config example
-- `sub_bases.example.json` - example upstream source list
-- `test_formats.sh` - live endpoint compatibility smoke test
-- `submerge.container` - example Quadlet container unit
-
-## Requirements
-
-- Python 3.12+ (3.10+ should also work)
-- Optional: `qrcode` Python package (for QR in HTML view)
-- Nginx in front of the service
-
-## Configuration
-
-Environment variables:
-
-- `SUB_BASES_FILE` (required): path to a JSON file with upstream base URLs
-- `LISTEN_HOST` (default: `0.0.0.0`)
-- `LISTEN_PORT` (default: `18080`)
-- `TIMEOUT` (default: `10`)
-- `ALLOW_PARTIAL` (default: `1`)
-- `PAGE_TITLE` (default: `Sub-merge`)
-- `SUB_LINK_REWRITES` (optional): JSON object with link rewrite rules
-- `SUB_LINK_REWRITES_FILE` (optional): path to a JSON file with link rewrite rules; takes precedence over `SUB_LINK_REWRITES`
-- `SUB_REWRITE_DNS_TTL` (default: `300`): DNS cache TTL in seconds for host rewrites
-- `MIHOMO_AUTO` (default: `1`): automatically serve Mihomo YAML to recognized Clash/Mihomo/Koala/Stash user agents
-- `MIHOMO_TEMPLATE_FILE` (default: `./mihomo_template.yaml` next to `submerge.py`)
-- `MIHOMO_PROFILE_TITLE` (default: `${PAGE_TITLE} Mihomo`)
-- `MIHOMO_UPDATE_INTERVAL` (default: `6`): value for the `Profile-Update-Interval` response header
-- `SUB_METADATA_FILE` (default: `./sub_metadata.json` next to `submerge.py`): optional hot-reload JSON for Happ/v2RayTun banners, metadata, and routing profiles
-- `HTML_TEMPLATE_FILE` (default: `./web_template.html` next to `submerge.py`)
-- `I18N_FILE` (default: `./web_i18n.json` next to `submerge.py`)
-
-## Subscription Sources
-
-Sources are configured only through `SUB_BASES_FILE`. The old comma-separated `SUB_BASES` environment variable is not supported.
-
-Example `/opt/submerge/sub_bases.json`:
-
-```json
-[
-  "https://de.example.com",
-  "https://fr.example.com"
-]
-```
-
-Then add this to the container config:
-
-```ini
-Environment=SUB_BASES_FILE=/opt/submerge/sub_bases.json
-```
-
-Changes to this JSON file are picked up on the next subscription request without restarting the service. If the file becomes invalid while the service is running, Submerge keeps the last valid source list and logs a warning.
-
-## Link Rewrites
-
-Rewrites are applied only to decoded URL-style subscription links whose host matches a configured rule. They run before merge de-duplication, so raw output, HTML view, and duplicate handling all use the same final link.
-
-Example `/opt/submerge/link_rewrites.json`:
-
-```json
-{
-  "ru.example.com": {
-    "resolve_host": true,
-    "query": {
-      "sni": "front-primary.example.com"
-    }
-  },
-  "ru-backup.example.com": {
-    "resolve_host": true,
-    "query": {
-      "sni": "front-backup.example.com"
-    }
-  }
-}
-```
-
-Then add this to the container config:
-
-```ini
-Environment=SUB_LINK_REWRITES_FILE=/opt/submerge/link_rewrites.json
-```
-
-The JSON file is not auto-discovered. Rewrites are enabled only when `SUB_LINK_REWRITES_FILE` or `SUB_LINK_REWRITES` is present in the service environment. When `SUB_LINK_REWRITES_FILE` is used, changes to that file are picked up on the next subscription request without restarting the service.
-
-Supported rule fields:
-
-- `resolve_host`: when true, resolves the original link host and replaces it with the resolved IP address
-- `address`: optional fixed address replacement; if set, it is used instead of DNS resolution
-- `query`: object of query parameters to force, for example `{"sni": "example.com"}`
-
-After changing the Quadlet container file or the rewrite environment variables, reload and restart the service:
+## Run locally
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart submerge.service
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+cp examples/sub_bases.example.json sub_bases.json
+# Edit sub_bases.json with your upstream URLs before requesting a subscription.
+.venv/bin/python -m submerge
 ```
 
-Check that the generated service contains the rewrite environment:
+The service listens on port `18080`. `/healthz` checks the local HTTP server;
+`/sub/<id>` fetches a subscription. Public links use `/sub-merge/<id>` through nginx.
+The previous `python submerge.py` entry point remains available.
+
+## Deploy and publish
+
+The [deployment guide](docs/deployment.md) covers `main.pod`, nginx, migration,
+updates and rollback. The [workflow](.github/workflows/ci.yml) checks code, runs
+tests, builds the image and tests it with nginx before publishing to GHCR:
+
+| Git event | Image tags |
+| --- | --- |
+| Pull request or manual run | Checks only |
+| Push to `main` | `main`, `sha-<commit>` |
+| Release tag `vX.Y.Z` | `vX.Y.Z`, `sha-<commit>`, `stable` |
+| Prerelease tag `vX.Y.Z-rc.N` | Version and commit tags only |
+
+After pushing the project changes, publish with an unused release tag:
 
 ```bash
-sudo systemctl cat submerge.service | grep SUB_LINK_REWRITES
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
-If the rewrite JSON file becomes invalid while the service is running, Submerge keeps the last valid rewrite rules and logs a warning.
+The supplied Quadlet follows `ghcr.io/pryid/submerge:stable`. The workflow currently
+builds `linux/amd64`. Set the GHCR package to **Public** for anonymous server pulls.
 
-Keep deployment-specific source and rewrite files out of git. The repository ignores `sub_bases.json` and `link_rewrites.json` for this reason.
-
-## Happ and v2RayTun Metadata
-
-Raw subscriptions can include optional client metadata for Happ and v2RayTun without changing the public URL. Submerge keeps generic clients on the old base64 body, but when it sees a Happ or v2RayTun user agent, or an explicit `?format=happ` / `?format=v2raytun`, it adds compatible headers. By default the subscription body is not changed, so raw clients that do not understand body metadata still receive a clean proxy URI list.
-
-Happ routing uses a Happ routing profile JSON and is sent as:
-
-```http
-routing: happ://routing/onadd/<base64-json>
-```
-
-v2RayTun routing uses a v2RayTun routing JSON and is sent as:
-
-```http
-routing: <base64-json>
-```
-
-The two formats are intentionally separate. Happ and v2RayTun use the same header name, but the value format is different.
-
-Example setup:
+## Development
 
 ```bash
-sudo cp sub_metadata.example.json /opt/submerge/sub_metadata.json
+make check PYTHON=.venv/bin/python
+make image
+make test-image PYTHON=.venv/bin/python
 ```
 
-Edit `/opt/submerge/sub_metadata.json` to change banner text, support links, and embedded routing profiles. This file is read on every matching Happ/v2RayTun request, so changes do not require a service restart.
+See [development and testing](docs/development.md) and the
+[configuration reference](docs/configuration.md).
 
-```json
-{
-  "metadata": {
-    "profile_title": "Submerge",
-    "profile_update_interval": "1",
-    "support_url": "https://example.com/support",
-    "announce_text": "Servers updated.",
-    "announce_url": "https://example.com/support",
-    "info_text": "Servers updated.",
-    "info_color": "blue",
-    "info_button_text": "Support",
-    "info_button_link": "https://example.com/support",
-    "expire": "",
-    "expire_button_link": "",
-    "body_comments": "0"
-  },
-  "happ": {
-    "routing": {}
-  },
-  "v2raytun": {
-    "routing": {}
-  }
-}
-```
+## Repository layout
 
-`body_comments` is off by default. Enabling it adds `#...` metadata lines into the decoded subscription body for clients that support body headers, but it can confuse stricter raw clients.
+| Path | Purpose |
+| --- | --- |
+| `submerge/` | HTTP server, subscription logic and configuration loader |
+| `submerge/assets/` | Browser template, translations and default Mihomo profile |
+| `tests/` | Unit, HTTP and container integration tests |
+| `deploy/` | Quadlet and nginx examples |
+| `examples/` | Neutral JSON configuration examples |
+| `scripts/` | Live endpoint smoke test |
+| `docs/` | Configuration, deployment and development guides |
 
-Deployment-specific files such as `sub_metadata.json`, provider-specific Mihomo YAML files, and scratch routing exports are ignored by git. Keep real domains, support links, and provider-specific names in local ignored files, not in tracked examples.
-
-## Run Locally (Python)
-
-```bash
-cp sub_bases.example.json sub_bases.json
-export SUB_BASES_FILE="$PWD/sub_bases.json"
-export LISTEN_PORT=18080
-python3 -m pip install qrcode || true
-python3 submerge.py
-```
-
-Service will listen on `http://127.0.0.1:18080`.
-
-## Deploy with Quadlet Container
-
-This repository already includes `submerge.container`.
-
-1. Place project files into `/opt/submerge`:
-
-```bash
-sudo mkdir -p /opt/submerge
-sudo cp submerge.py web_template.html web_i18n.json mihomo_template.yaml sub_metadata.example.json /opt/submerge/
-sudo cp sub_bases.example.json /opt/submerge/sub_bases.json
-```
-
-2. Install the Quadlet source file (adjust path depending on your setup), then reload generators and start the generated service:
-
-```bash
-sudo cp submerge.container /etc/containers/systemd/submerge.container
-sudo systemctl daemon-reload
-sudo systemctl start submerge.service
-```
-
-Do not use `systemctl enable --now` for the generated Quadlet service. The persistent source of truth is `/etc/containers/systemd/submerge.container`; its `[Install]` section defines the boot target, and `daemon-reload` regenerates the corresponding systemd service.
-
-3. Check logs:
-
-```bash
-sudo systemctl status submerge.service
-```
-
-## Nginx Configuration (Required)
-
-Add this block to your nginx config:
-
-```nginx
-location ~ ^/sub-merge/([A-Za-z0-9_-]+)$ {
-    proxy_pass http://127.0.0.1:18080/sub/$1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header Range $http_range;
-    proxy_set_header If-Range $http_if_range;
-    proxy_redirect off;
-
-    proxy_intercept_errors on;
-    limit_req zone=one burst=20 nodelay;
-    error_page 400 404 =404 @nginx_404;
-}
-
-location @nginx_404 {
-    return 404;
-}
-```
-
-The `limit_req` line requires a matching `limit_req_zone` in the nginx `http` context.
-
-The query string must be preserved. With the `proxy_pass` form above, `/sub-merge/<id>?format=base64` reaches the service as `/sub/<id>?format=base64`.
-
-Then reload nginx:
-
-```bash
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-## Verification
-
-- Browser view:
-  - `https://your-domain/sub-merge/<id>`
-- Client/raw output:
-  - request same URL with non-browser client (for example `curl`)
-- Force raw output:
-  - `https://your-domain/sub-merge/<id>?format=base64`
-- Force Happ raw output with Happ routing/metadata headers:
-  - `https://your-domain/sub-merge/<id>?format=happ`
-- Force v2RayTun raw output with v2RayTun routing/metadata headers:
-  - `https://your-domain/sub-merge/<id>?format=v2raytun`
-- Force Mihomo YAML:
-  - `https://your-domain/sub-merge/<id>?format=mihomo`
-- Live smoke test:
-  - `./test_formats.sh https://your-domain/sub-merge/<id>`
-
-## Live Editing
-
-- Changes in `web_template.html` and `web_i18n.json` are picked up on page refresh (no service restart needed).
-- UI locales are not embedded in `submerge.py`; add or edit languages in `web_i18n.json`.
-- Changes in the file referenced by `SUB_BASES_FILE` are picked up on the next subscription request.
-- Changes in `submerge.py` require service restart.
-- Changes in the file referenced by `SUB_LINK_REWRITES_FILE` are picked up on the next subscription request.
-- Changes in `SUB_METADATA_FILE` are picked up on the next matching Happ/v2RayTun request.
-- Changing the value of `SUB_BASES_FILE`, `SUB_LINK_REWRITES`, `SUB_LINK_REWRITES_FILE`, or the Quadlet container file requires service restart.
-- Changing the value of `SUB_METADATA_FILE` requires service restart.
-
-## Notes
-
-- If an upstream returns a non-plain format, Submerge falls back to the first successful upstream response as-is.
-- If all upstreams fail on network level, service returns `502`.
-- Mihomo YAML does not parse or embed node links. Its `proxy-providers.<provider>.url` points back to the public endpoint with `?format=base64`, so the existing merge, de-duplication, userinfo aggregation, and link rewrites stay on the raw provider path.
+Keep real upstream URLs, rewrite targets and client profiles in ignored local
+files or `/etc/submerge` on the server. `.dockerignore` allows only runtime inputs
+into the image build context.

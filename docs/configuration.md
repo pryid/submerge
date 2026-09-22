@@ -1,0 +1,116 @@
+# Configuration
+
+Environment variables configure the process; JSON files contain deployment data.
+Existing source, rewrite and metadata formats are supported. Environment file
+paths refer to locations **inside** the container.
+
+## Environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SUB_BASES_FILE` | `/config/sub_bases.json` in the image; `./sub_bases.json` locally | Required upstream list |
+| `SUB_LINK_REWRITES_FILE` | Unset | Rewrite file; takes precedence over inline rules |
+| `SUB_LINK_REWRITES` | Unset | Inline JSON rewrite rules |
+| `SUB_METADATA_FILE` | `/config/sub_metadata.json` in the image; `./sub_metadata.json` locally | Optional metadata and routing profiles |
+| `LISTEN_HOST` | `0.0.0.0`; supplied Quadlet uses `127.0.0.1` | Bind address |
+| `LISTEN_PORT` | `18080` | HTTP port |
+| `TIMEOUT` | `10` | Timeout per upstream request, in seconds |
+| `ALLOW_PARTIAL` | `1` | Allow a merged response when some sources fail |
+| `PAGE_TITLE` | `Sub-merge` | Browser page title |
+| `SUB_REWRITE_DNS_TTL` | `300` | DNS rewrite cache lifetime, in seconds |
+| `MIHOMO_AUTO` | `1` | Select Mihomo YAML for recognized client user agents |
+| `MIHOMO_TEMPLATE_FILE` | Bundled `mihomo_template.yaml` | Optional custom profile template |
+| `MIHOMO_PROFILE_TITLE` | `${PAGE_TITLE} Mihomo` | Mihomo profile title |
+| `MIHOMO_UPDATE_INTERVAL` | `6` | Mihomo `Profile-Update-Interval` header |
+| `HTML_TEMPLATE_FILE` | Bundled `web_template.html` | Optional custom browser template |
+| `I18N_FILE` | Bundled `web_i18n.json` | Optional custom translation dictionary |
+
+Bundled assets live in `submerge/assets/` (`/app/submerge/assets/` in the image).
+
+## Sources and merging
+
+Start with [sub_bases.example.json](../examples/sub_bases.example.json):
+
+```json
+[
+  "https://de.example.com",
+  "https://fr.example.com"
+]
+```
+
+For each subscription ID, Submerge requests `<base>/sub/<id>` from every source.
+The array must be nonempty. The old comma-separated `SUB_BASES` variable is not supported.
+URL-style links in base64 responses are rewritten, merged and deduplicated in
+source order. Traffic counters are aggregated across successful upstreams.
+
+- `ALLOW_PARTIAL=1` returns available subscriptions when some sources fail.
+- `ALLOW_PARTIAL=0` returns `502` for mixed successful and failed/empty responses.
+- If none succeed, the first upstream HTTP error is preserved, or `502` is returned
+  when all responses are network failures or empty `200` bodies.
+- If a successful body is not a plain base64 link list, the first successful
+  upstream body is returned unchanged.
+
+## Link rewrites
+
+Start with [link_rewrites.example.json](../examples/link_rewrites.example.json)
+and explicitly enable it in the Quadlet:
+
+```ini
+Environment=SUB_LINK_REWRITES_FILE=/config/link_rewrites.json
+```
+
+Each key is a link hostname. Supported rule fields:
+
+| Field | Behavior |
+| --- | --- |
+| `resolve_host` | Resolve the hostname and replace it with an IP address |
+| `address` | Use a fixed address instead of DNS resolution |
+| `query` | Set parameters, for example `{"sni": "front.example.com"}` |
+
+Rewrites run before deduplication. Unmatched links are preserved.
+
+## Happ and v2RayTun
+
+[sub_metadata.example.json](../examples/sub_metadata.example.json) contains the
+supported fields and neutral routing examples. Put the edited file at
+`/etc/submerge/sub_metadata.json`; the image discovers it automatically.
+
+The `metadata` section configures titles, support URLs, announcements and banners.
+`happ.routing` and `v2raytun.routing` contain separate client-specific profiles.
+Happ receives `routing: happ://routing/onadd/<base64-json>`; v2RayTun receives
+`routing: <base64-json>`. The browser exposes matching import links.
+
+Headers are selected by user agent or `?format=happ` / `?format=v2raytun`.
+Generic clients receive a clean base64 body. `metadata.body_comments` defaults to
+`0`; enabling it inserts metadata into the decoded body and may affect strict clients.
+
+## Formats and templates
+
+| Public request | Response |
+| --- | --- |
+| `/sub-merge/<id>` | Browser HTML or client format selected by headers |
+| `?format=base64` | Raw subscription body |
+| `?format=html` | Browser page |
+| `?format=mihomo` | Mihomo/Clash YAML |
+| `?format=happ` | Raw subscription with Happ metadata |
+| `?format=v2raytun` | Raw subscription with v2RayTun metadata |
+
+Explicit formats take precedence over automatic negotiation. Mihomo uses a proxy
+provider pointing back to `?format=base64`, sharing merge and rewrite behavior.
+To customize Mihomo, place a template at `/etc/submerge/mihomo.yaml` and set
+`MIHOMO_TEMPLATE_FILE=/config/mihomo.yaml`. Retain `${PROVIDER_URL}`;
+`${SUB_ID}` and `${PROFILE_TITLE}` are also available.
+
+## Reload behavior
+
+Sources, rewrites and metadata share one loader. Changes are detected on the next
+relevant request. Invalid edits or removed files retain the last valid value and
+log a warning. Invalid initial configuration prevents startup; a missing optional
+metadata file uses defaults. Use `{}` to clear metadata or rewrites.
+
+Mount the complete configuration directory so atomic replacement remains visible.
+Preserve permissions and SELinux labels when replacing files.
+
+Code and bundled assets are updated through image releases. In source checkouts,
+HTML, translations and Mihomo templates are reread on requests. Quadlet environment
+changes require `systemctl daemon-reload` and a service restart.
