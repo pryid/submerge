@@ -1,7 +1,8 @@
 # Only application code, bundled assets and runtime dependencies enter the build.
 **
 !Containerfile
-!requirements.txt
+!pyproject.toml
+!uv.lock
 !submerge/
 !submerge/*.py
 !submerge/assets/

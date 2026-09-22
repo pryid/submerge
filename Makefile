@@ -1,4 +1,5 @@
-PYTHON ?= python3
+UV ?= uv
+PYTHON ?= $(UV) run --locked python
 ENGINE ?= podman
 IMAGE ?= localhost/submerge:test
 BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
