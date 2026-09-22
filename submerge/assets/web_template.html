@@ -387,7 +387,7 @@ function expiryText(value, lang){
   if (value === null || value === undefined) return tx(t,"expiryUnknown");
   if (value === 0) return tx(t,"noExpiry");
   const date=new Date(value*1000);
-  const dateText=date.toLocaleDateString(lang);
+  const dateText=date.toLocaleString(undefined,{dateStyle:"short",timeStyle:"long"});
   const days=Math.ceil((date.getTime()-Date.now())/86400000);
   return fmt(tx(t,days<=0?"expiredOn":"expiresOn"),{date:dateText,days:Math.max(0,days)});
 }

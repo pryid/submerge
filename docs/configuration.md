@@ -76,6 +76,8 @@ on this metadata.
 
 The browser shows the nearest expiry and days remaining. Each connection in the
 list includes its source's remaining quota, uploaded/downloaded traffic and expiry.
+Expiry timestamps include the time down to seconds and the time zone, formatted
+using the browser's locale and local time zone rather than the interface language.
 Remaining quota is the limit minus upload and download, floored at zero; unlimited
 and unknown quotas are shown explicitly. Traffic and quotas
 are displayed in GiB (1024³ bytes); subscription headers retain the original byte
