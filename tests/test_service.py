@@ -268,7 +268,9 @@ class FormatRoutingTests(unittest.TestCase):
                     self.assertIn(
                         f'<footer class="build-revision" title="{sha}">{sha[:7]}</footer>', page
                     )
-                    self.assertGreater(page.index("<footer"), page.index('<details class="raw">'))
+                    self.assertGreater(
+                        page.index("<footer"), page.index('<details class="card raw">')
+                    )
                 else:
                     self.assertNotIn("<footer", page)
                 self.assertNotIn("$BUILD_FOOTER", page)

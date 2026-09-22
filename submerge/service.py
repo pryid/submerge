@@ -1124,7 +1124,7 @@ def render_html(
                     f"Download .conf</a>{qr_html}</div></div>"
                 )
             items.append(
-                f'<div class="connection-card">{row}'
+                f'<div class="card connection-card">{row}'
                 f'<div class="connection-usage" data-item="{i}" hidden></div></div>'
             )
     items_html = (

@@ -5,11 +5,11 @@
 <style>
 :root{
   color-scheme:dark;
-  --bg:#080b12;--bg2:#0b1019;
+  --bg:#080b12;
   --t:#eef2f8;--m:#94a0b4;--mm:#6b7585;
   --line:rgba(255,255,255,.085);--line2:rgba(255,255,255,.14);
   --surf:rgba(255,255,255,.028);--surf2:rgba(255,255,255,.05);--surf3:rgba(255,255,255,.075);
-  --ac:#34d3ee;--ac-d:#0f3a44;
+  --ac:#34d3ee;
   --ac-soft:rgba(52,211,238,.13);--ac-line:rgba(52,211,238,.38);
   --on-soft:#dffaff;--on-solid:#dffaff;
   --primary-bg:linear-gradient(180deg,rgba(52,211,238,.26),rgba(52,211,238,.16));
@@ -22,17 +22,17 @@
   --spotlight-fill:rgba(52,211,238,.10);
   --qr-pad:#fff;
   --inset:rgba(0,0,0,.18);
-  --r:14px;--r2:18px;
+  --r2:18px;
   --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 16px 40px -24px rgba(0,0,0,.8);
 }
 @media (prefers-color-scheme: light){
   :root{
     color-scheme:light;
-    --bg:#e9edf3;--bg2:#f4f7fb;
-    --t:#0f1722;--m:#56627280;--m:#54616f;--mm:#7e8a99;
+    --bg:#e9edf3;
+    --t:#0f1722;--m:#54616f;--mm:#7e8a99;
     --line:rgba(16,28,44,.1);--line2:rgba(16,28,44,.17);
     --surf:rgba(255,255,255,.55);--surf2:rgba(255,255,255,.92);--surf3:rgba(16,28,44,.05);
-    --ac:#0a93b0;--ac-d:#cdeef4;
+    --ac:#0a93b0;
     --ac-soft:rgba(10,147,176,.1);--ac-line:rgba(10,147,176,.32);
     --on-soft:#06414c;--on-solid:#ffffff;
     --primary-bg:linear-gradient(180deg,#16a8c6,#0a93b0);
@@ -59,10 +59,16 @@ background:
 color:var(--t);line-height:1.45}
 .wrap{max-width:1020px;margin:0 auto;padding:26px 18px 60px}
 
+/* Shared card surface; individual blocks only override their differences. */
+.card{border:1px solid var(--line);border-radius:var(--r2);background:var(--surf)}
+.hero,.qr,.panel,details.raw{box-shadow:var(--shadow)}
+.hero,.qr{background:linear-gradient(180deg,var(--surf2),var(--surf))}
+.recommended,.client{display:grid;gap:12px}
+
 /* ---------- hero ---------- */
 .top{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
 @media(min-width:900px){.top{grid-template-columns:1fr 300px}}
-.hero{border:1px solid var(--line);border-radius:var(--r2);background:linear-gradient(180deg,var(--surf2),var(--surf));box-shadow:var(--shadow);padding:18px 18px 16px}
+.hero{padding:18px 18px 16px}
 .brandrow{display:flex;align-items:center;gap:12px}
 .brandmark{width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
 background:linear-gradient(135deg,rgba(52,211,238,.25),rgba(52,211,238,.06));border:1px solid var(--ac-line);color:var(--ac)}
@@ -95,14 +101,13 @@ font-size:13px;font-weight:550;transition:background .15s,border-color .15s,tran
 .btn.primary:hover{background:var(--primary-bg-h)}
 
 /* ---------- qr ---------- */
-.qr{border:1px solid var(--line);border-radius:var(--r2);background:linear-gradient(180deg,var(--surf2),var(--surf));box-shadow:var(--shadow);
-padding:18px;display:grid;justify-items:center;gap:12px}
+.qr{padding:18px;display:grid;justify-items:center;gap:12px}
 .qr img{width:188px;height:188px;border-radius:14px;padding:10px;background:var(--qr-pad);border:1px solid var(--line)}
 .qr .scan{color:var(--t);font-size:13px;font-weight:550;text-align:center}
 .qr-url{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--m);word-break:break-all;text-align:center;line-height:1.4}
 
 /* ---------- panels ---------- */
-.panel{margin-top:16px;border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--surf);box-shadow:var(--shadow)}
+.panel{margin-top:16px;overflow:hidden}
 .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .hd-title{color:var(--t);font-size:13.5px;font-weight:600}
 .hd-meta{color:var(--m);font-size:12.5px}
@@ -120,11 +125,11 @@ font-size:12px;font-weight:550;display:flex;gap:7px;align-items:center;justify-c
 .platform.active svg{opacity:1}
 
 /* recommended + cards */
-.recommended{position:relative;border:1px solid var(--ac-line);
-background:linear-gradient(135deg,rgba(52,211,238,.12),var(--surf2));border-radius:var(--r2);padding:16px;display:grid;gap:12px}
+.recommended{position:relative;border-color:var(--ac-line);
+background:linear-gradient(135deg,rgba(52,211,238,.12),var(--surf2));padding:16px}
 .clientgrid{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
 @media(min-width:720px){.clientgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.client{border:1px solid var(--line);background:var(--surf);border-radius:var(--r2);padding:14px;display:grid;gap:12px;align-content:start;transition:border-color .15s,background .15s}
+.client{padding:14px;align-content:start;transition:border-color .15s,background .15s}
 .client:hover{border-color:var(--line2);background:var(--surf2)}
 .clienthead{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;min-width:0}
 .clientname{font-weight:650;font-size:14.5px;line-height:1.2}
@@ -159,13 +164,12 @@ cursor:pointer;display:grid;gap:6px;margin-bottom:8px;transition:border-color .1
 .row:hover{background:var(--surf2);border-color:var(--line2)}
 .config-row{margin-bottom:8px;display:grid;gap:6px}
 .config-row .row{margin-bottom:0}
-.config-row>a{justify-self:start}
 .config-actions{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
 .config-qr{max-width:100%}
 .config-qr summary{cursor:pointer;padding:10px;color:var(--ac);font-size:13px}
 .config-qr img{display:block;width:300px;max-width:100%;height:auto;background:white;border-radius:12px}
 .expiry{margin-top:8px;font-size:12px;color:var(--m)}
-.connection-card{margin-bottom:12px;border:1px solid var(--line);border-radius:13px;overflow:hidden;min-width:0}
+.connection-card{margin-bottom:12px;border-radius:13px;background:transparent;overflow:hidden;min-width:0}
 .connection-card:last-child{margin-bottom:0}
 .connection-card .row{margin-bottom:0;border:0;border-radius:0}
 .connection-card .config-row{margin-bottom:0}
@@ -190,7 +194,7 @@ border:1px solid var(--line2);padding:11px 16px;border-radius:13px;font-size:13p
 transition:opacity .2s ease, transform .2s ease;pointer-events:none;box-shadow:0 12px 30px -10px rgba(0,0,0,.7)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 pre{margin:0;padding:14px 16px;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--m)}
-details.raw{margin-top:16px;border:1px solid var(--line);border-radius:var(--r2);background:var(--surf);overflow:hidden;box-shadow:var(--shadow)}
+details.raw{margin-top:16px;overflow:hidden}
 details.raw>summary{cursor:pointer;padding:13px 16px;color:var(--m);font-size:13px;font-weight:550;list-style:none;display:flex;align-items:center;gap:8px}
 details.raw[open]>summary{border-bottom:1px solid var(--line);color:var(--t)}
 details.raw>summary::-webkit-details-marker{display:none}
@@ -201,14 +205,14 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
 
 /* Cursor lighting is decorative; controls and text selection remain accessible. */
 @media (hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
-  :is(.hero,.qr,.panel,.recommended,.client,.connection-card,details.raw){position:relative;isolation:isolate}
-  :is(.hero,.qr,.panel,.recommended,.client,.connection-card,details.raw)::after{
+  .card{position:relative;isolation:isolate}
+  .card::after{
     /* Match the outer edge of the card's 1px border; keep a single border contour. */
     content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;z-index:1;
     opacity:0;transition:opacity .2s ease;
     background:radial-gradient(320px circle at var(--spotlight-x,50%) var(--spotlight-y,50%),var(--spotlight-fill),transparent 70%);
   }
-  :is(.hero,.qr,.panel,.recommended,.client,.connection-card,details.raw).spotlight-active::after{opacity:1}
+  .card.spotlight-active::after{opacity:1}
 }
 
 /* ---------- mobile ---------- */
@@ -241,7 +245,7 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
 </style></head><body>
 <div class="wrap">
   <div class="top">
-    <div class="hero">
+    <div class="card hero">
       <div class="brandrow">
         <div class="brandmark">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8 15.8 7.2M8.2 13.2l7.6 3.6"/></svg>
@@ -271,14 +275,14 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
       $NOTE
     </div>
 
-    <div class="qr">
+    <div class="card qr">
       $QR
       <div class="scan" id="scan"></div>
       <div class="qr-url">$SUBURL</div>
     </div>
   </div>
 
-  <div class="panel">
+  <div class="card panel">
     <div class="hd"><div class="hd-title" id="clientsLbl"></div><div class="hd-meta" id="clientPlatformLbl"></div></div>
     <div class="clientbd">
       <div class="platforms" id="platformTabs"></div>
@@ -288,12 +292,12 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
     </div>
   </div>
 
-  <div class="panel">
+  <div class="card panel">
     <div class="hd"><div class="hd-title" id="listLbl"></div><div class="hd-meta" id="hint"></div></div>
     <div class="bd" id="list">$ITEMS<div id="listStatus" hidden></div></div>
   </div>
 
-  <details class="raw">
+  <details class="card raw">
     <summary id="detailsLbl"></summary>
     <pre id="userinfo">$USERINFO</pre>
     <pre id="raw">$RAW</pre>
@@ -378,7 +382,7 @@ const CLIENTS = {
 function gib(b){ return (b/(1024 ** 3)).toFixed(2); }
 function setupCardSpotlight(){
   const media=window.matchMedia("(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference)");
-  const selector=".hero,.qr,.panel,.recommended,.client,.connection-card,details.raw";
+  const selector=".card";
   let active=null, pointer=null, frame=0;
   function clear(){
     cancelAnimationFrame(frame); frame=0; pointer=null;
@@ -668,7 +672,7 @@ function renderClientCard(client, t, featured){
   const downloadBtn=client.download ? `<button class="btn client-action client-action-secondary" type="button" data-open="${escapeAttr(client.download)}">${tx(t, "clientDownload")}</button>` : "";
   const intro=featured ? `<div class="sectionTitle">${tx(t, "clientRecommended")}</div>` : "";
   const cls=featured ? "recommended" : "client";
-  return `<div class="${cls}">
+  return `<div class="card ${cls}">
     ${intro}
     <div class="clienthead">
       ${appIcon(client)}
