@@ -19,6 +19,7 @@
   --meter-track:rgba(255,255,255,.07);
   --meter-grad:linear-gradient(90deg,var(--ac),#6ee7ff);
   --page-glow1:rgba(52,211,238,.10);--page-glow2:rgba(99,102,241,.08);
+  --spotlight-fill:rgba(52,211,238,.10);
   --qr-pad:#fff;
   --inset:rgba(0,0,0,.18);
   --r:14px;--r2:18px;
@@ -41,6 +42,7 @@
     --meter-track:rgba(16,28,44,.1);
     --meter-grad:linear-gradient(90deg,#0a93b0,#23c4e0);
     --page-glow1:rgba(10,147,176,.12);--page-glow2:rgba(99,102,241,.08);
+    --spotlight-fill:rgba(10,147,176,.09);
     --qr-pad:#fff;
     --inset:rgba(16,28,44,.04);
     --shadow:0 1px 0 rgba(255,255,255,.7) inset, 0 14px 34px -22px rgba(16,28,44,.4);
@@ -196,6 +198,18 @@ details.raw>summary::before{content:"";width:7px;height:7px;border-right:2px sol
 transform:rotate(-45deg);transition:transform .2s;margin-right:2px}
 details.raw[open]>summary::before{transform:rotate(45deg)}
 .note{border:1px solid rgba(245,196,81,.32);background:rgba(245,196,81,.1);border-radius:14px;padding:11px 13px;margin:14px 0 0;font-size:13px;color:var(--warn);font-weight:550}
+
+/* Cursor lighting is decorative; controls and text selection remain accessible. */
+@media (hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+  :is(.hero,.qr,.panel,.recommended,.client,.connection-card,details.raw){position:relative;isolation:isolate}
+  :is(.hero,.qr,.panel,.recommended,.client,.connection-card,details.raw)::after{
+    /* Match the outer edge of the card's 1px border; keep a single border contour. */
+    content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;z-index:1;
+    opacity:0;transition:opacity .2s ease;
+    background:radial-gradient(320px circle at var(--spotlight-x,50%) var(--spotlight-y,50%),var(--spotlight-fill),transparent 70%);
+  }
+  :is(.hero,.qr,.panel,.recommended,.client,.connection-card,details.raw).spotlight-active::after{opacity:1}
+}
 
 /* ---------- mobile ---------- */
 @media(max-width:560px){
@@ -362,6 +376,53 @@ const CLIENTS = {
 };
 
 function gib(b){ return (b/(1024 ** 3)).toFixed(2); }
+function setupCardSpotlight(){
+  const media=window.matchMedia("(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference)");
+  const selector=".hero,.qr,.panel,.recommended,.client,.connection-card,details.raw";
+  let active=null, pointer=null, frame=0;
+  function clear(){
+    cancelAnimationFrame(frame); frame=0; pointer=null;
+    if (active) active.classList.remove("spotlight-active");
+    active=null;
+  }
+  function paint(){
+    frame=0;
+    const card=pointer.target.isConnected ? pointer.target.closest(selector) : null;
+    if (card!==active){
+      if (active) active.classList.remove("spotlight-active");
+      active=card;
+    }
+    if (!card) return;
+    const rect=card.getBoundingClientRect();
+    card.style.setProperty("--spotlight-x",(pointer.x-rect.left)+"px");
+    card.style.setProperty("--spotlight-y",(pointer.y-rect.top)+"px");
+    card.classList.add("spotlight-active");
+  }
+  function move(event){
+    if (event.pointerType!=="mouse" || !(event.target instanceof Element)){ clear(); return; }
+    pointer={target:event.target,x:event.clientX,y:event.clientY};
+    if (!frame) frame=requestAnimationFrame(paint);
+  }
+  function leave(event){
+    if (!(event.relatedTarget instanceof Element) || !event.relatedTarget.closest(selector)) clear();
+  }
+  function configure(){
+    clear();
+    document.removeEventListener("pointermove",move);
+    document.removeEventListener("pointerout",leave);
+    if (media.matches){
+      document.addEventListener("pointermove",move,{passive:true});
+      document.addEventListener("pointerout",leave,{passive:true});
+    }
+  }
+  media.addEventListener("change",configure);
+  document.addEventListener("pointercancel",clear,{passive:true});
+  document.addEventListener("scroll",clear,{capture:true,passive:true});
+  document.addEventListener("visibilitychange",clear);
+  window.addEventListener("blur",clear);
+  configure();
+}
+setupCardSpotlight();
 function fmt(template, vars){
   let out=String(template||"");
   Object.entries(vars||{}).forEach(([k,v])=>{
