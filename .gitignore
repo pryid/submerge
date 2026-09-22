@@ -29,6 +29,9 @@ Desktop.ini
 .mypy_cache/
 
 # Local deployment config with real upstreams and rewrite targets
+/local/
+.env
+.env.*
 sub_bases.json
 link_rewrites.json
 sub_metadata.json

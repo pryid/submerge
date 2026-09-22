@@ -1,0 +1,8 @@
+{
+  "node.example.com": {
+    "resolve_host": true,
+    "query": {
+      "sni": "front.example.com"
+    }
+  }
+}

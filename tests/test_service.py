@@ -3,19 +3,10 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qsl, urlparse
 
-_CONFIG_DIR = tempfile.TemporaryDirectory()
-_SUB_BASES_FILE = os.path.join(_CONFIG_DIR.name, "sub_bases.json")
-with open(_SUB_BASES_FILE, "w", encoding="utf-8") as f:
-    json.dump(["https://a.example"], f)
-
-os.environ["SUB_BASES_FILE"] = _SUB_BASES_FILE
-os.environ.pop("SUB_BASES", None)
-os.environ.pop("SUB_LINK_REWRITES", None)
-os.environ.pop("SUB_LINK_REWRITES_FILE", None)
-
-import submerge  # noqa: E402
+from submerge import service as submerge
 
 
 def base64_urlsafe_decode(value):
@@ -26,20 +17,15 @@ def base64_urlsafe_decode(value):
 
 class SubBasesTests(unittest.TestCase):
     def setUp(self):
-        self._bases_state = (
-            submerge.SUB_BASES_FILE,
-            list(submerge.SUB_BASES),
-            submerge.SUB_BASES_FILE_SIG,
-            submerge.SUB_BASES_LAST_ERROR,
+        self._path = submerge.SUB_BASES_FILE
+        self.cache_patch = patch.object(
+            submerge, "_sources", submerge.ReloadingJSON(submerge.parse_sub_bases)
         )
+        self.cache_patch.start()
+        self.addCleanup(self.cache_patch.stop)
 
     def tearDown(self):
-        (
-            submerge.SUB_BASES_FILE,
-            submerge.SUB_BASES,
-            submerge.SUB_BASES_FILE_SIG,
-            submerge.SUB_BASES_LAST_ERROR,
-        ) = self._bases_state
+        submerge.SUB_BASES_FILE = self._path
 
     def write_bases(self, path, bases):
         with open(path, "w", encoding="utf-8") as f:
@@ -61,8 +47,6 @@ class SubBasesTests(unittest.TestCase):
             self.write_bases(path, ["https://first.example"])
 
             submerge.SUB_BASES_FILE = path
-            submerge.SUB_BASES, submerge.SUB_BASES_FILE_SIG = submerge.load_sub_bases()
-
             first = submerge.current_sub_bases()
             self.write_bases(path, ["https://second.example", "https://third.example"])
             second = submerge.current_sub_bases()
@@ -76,7 +60,7 @@ class SubBasesTests(unittest.TestCase):
             self.write_bases(path, ["https://valid.example"])
 
             submerge.SUB_BASES_FILE = path
-            submerge.SUB_BASES, submerge.SUB_BASES_FILE_SIG = submerge.load_sub_bases()
+            submerge.current_sub_bases()
 
             with open(path, "w", encoding="utf-8") as f:
                 f.write("{")
@@ -172,7 +156,9 @@ class FormatRoutingTests(unittest.TestCase):
 
     def test_raw_client_kind_from_user_agent(self):
         self.assertEqual(submerge.raw_client_kind({"User-Agent": "Happ/2.0"}, "/sub/demo"), "happ")
-        self.assertEqual(submerge.raw_client_kind({"User-Agent": "v2RayTun/6.0"}, "/sub/demo"), "v2raytun")
+        self.assertEqual(
+            submerge.raw_client_kind({"User-Agent": "v2RayTun/6.0"}, "/sub/demo"), "v2raytun"
+        )
 
     def test_happ_and_v2raytun_user_agents_beat_browser_accept(self):
         happ_headers = {"Accept": "text/html", "User-Agent": "Mozilla/5.0 Happ/2.0"}
@@ -199,7 +185,9 @@ class FormatRoutingTests(unittest.TestCase):
 
     def test_url_with_query_preserves_and_overrides_query(self):
         self.assertEqual(
-            submerge.url_with_query("https://example.com/sub-merge/demo?format=html&x=1", {"format": "base64"}),
+            submerge.url_with_query(
+                "https://example.com/sub-merge/demo?format=html&x=1", {"format": "base64"}
+            ),
             "https://example.com/sub-merge/demo?format=base64&x=1",
         )
 
@@ -207,10 +195,16 @@ class FormatRoutingTests(unittest.TestCase):
         config = submerge.web_client_config("demo", "https://example.com/sub-merge/demo")
 
         self.assertEqual(config["urls"]["base"], "https://example.com/sub-merge/demo")
-        self.assertEqual(config["urls"]["base64"], "https://example.com/sub-merge/demo?format=base64")
+        self.assertEqual(
+            config["urls"]["base64"], "https://example.com/sub-merge/demo?format=base64"
+        )
         self.assertEqual(config["urls"]["happ"], "https://example.com/sub-merge/demo?format=happ")
-        self.assertEqual(config["urls"]["v2raytun"], "https://example.com/sub-merge/demo?format=v2raytun")
-        self.assertEqual(config["urls"]["mihomo"], "https://example.com/sub-merge/demo?format=mihomo")
+        self.assertEqual(
+            config["urls"]["v2raytun"], "https://example.com/sub-merge/demo?format=v2raytun"
+        )
+        self.assertEqual(
+            config["urls"]["mihomo"], "https://example.com/sub-merge/demo?format=mihomo"
+        )
 
     def test_web_client_config_includes_routing_deeplinks_from_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -236,7 +230,13 @@ class FormatRoutingTests(unittest.TestCase):
             "https://example.com/sub-merge/demo",
             "dmxlc3M6Ly9leGFtcGxlLmNvbQo=",
             ["vless://example.com#NL"],
-            {"header": "upload=0; download=0; total=0", "kind": "unlimited", "total": 0, "used": 0, "remain": 0},
+            {
+                "header": "upload=0; download=0; total=0",
+                "kind": "unlimited",
+                "total": 0,
+                "used": 0,
+                "remain": 0,
+            },
             None,
         )
 
@@ -253,11 +253,15 @@ class FormatRoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "mihomo.yaml")
             with open(path, "w", encoding="utf-8") as f:
-                f.write("url: '${PROVIDER_URL}'\npath: provider-${SUB_ID}.txt\n# ${PROFILE_TITLE}\n")
+                f.write(
+                    "url: '${PROVIDER_URL}'\npath: provider-${SUB_ID}.txt\n# ${PROFILE_TITLE}\n"
+                )
 
             submerge.MIHOMO_TEMPLATE_FILE = path
             submerge.MIHOMO_PROFILE_TITLE = "Test Profile"
-            out = submerge.render_mihomo_config("bad/id", "https://example.com/sub-merge/bad_id?format=base64")
+            out = submerge.render_mihomo_config(
+                "bad/id", "https://example.com/sub-merge/bad_id?format=base64"
+            )
 
         self.assertIn("url: 'https://example.com/sub-merge/bad_id?format=base64'", out)
         self.assertIn("path: provider-bad_id.txt", out)
@@ -298,7 +302,9 @@ class FormatRoutingTests(unittest.TestCase):
         self.assertTrue(happ_headers["Routing"].startswith("happ://routing/onadd/"))
         self.assertEqual(happ_body, [])
         self.assertFalse(v2_headers["Routing"].startswith("happ://"))
-        self.assertEqual(json.loads(base64_urlsafe_decode(v2_headers["Routing"]))["name"], "v2RayTun")
+        self.assertEqual(
+            json.loads(base64_urlsafe_decode(v2_headers["Routing"]))["name"], "v2RayTun"
+        )
 
     def test_raw_subscription_metadata_hot_reloads_json_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -307,11 +313,15 @@ class FormatRoutingTests(unittest.TestCase):
 
             with open(path, "w", encoding="utf-8") as f:
                 json.dump({"metadata": {"profile_title": "First", "announce_text": "One"}}, f)
-            first, _first_body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
+            first, _first_body = submerge.raw_subscription_metadata(
+                "happ", "", "https://example.com"
+            )
 
             with open(path, "w", encoding="utf-8") as f:
                 json.dump({"metadata": {"profile_title": "Second", "announce_text": "Two"}}, f)
-            second, _second_body = submerge.raw_subscription_metadata("happ", "", "https://example.com")
+            second, _second_body = submerge.raw_subscription_metadata(
+                "happ", "", "https://example.com"
+            )
 
         self.assertEqual(first["Profile-Title"], "base64:Rmlyc3Q=")
         self.assertEqual(first["Announce"], "base64:T25l")
@@ -333,20 +343,15 @@ class FormatRoutingTests(unittest.TestCase):
 
 class LinkRewriteTests(unittest.TestCase):
     def setUp(self):
-        self._rewrite_state = (
-            submerge.SUB_LINK_REWRITES_FILE,
-            dict(submerge.LINK_REWRITE_RULES),
-            submerge.LINK_REWRITE_FILE_SIG,
-            submerge.LINK_REWRITE_LAST_ERROR,
+        self._path = submerge.SUB_LINK_REWRITES_FILE
+        self.cache_patch = patch.object(
+            submerge, "_rewrites", submerge.ReloadingJSON(submerge.parse_link_rewrite_rules)
         )
+        self.cache_patch.start()
+        self.addCleanup(self.cache_patch.stop)
 
     def tearDown(self):
-        (
-            submerge.SUB_LINK_REWRITES_FILE,
-            submerge.LINK_REWRITE_RULES,
-            submerge.LINK_REWRITE_FILE_SIG,
-            submerge.LINK_REWRITE_LAST_ERROR,
-        ) = self._rewrite_state
+        submerge.SUB_LINK_REWRITES_FILE = self._path
 
     def write_rules(self, path, sni):
         with open(path, "w", encoding="utf-8") as f:
@@ -369,10 +374,14 @@ class LinkRewriteTests(unittest.TestCase):
             }
         )
 
-        untouched = "vless://id@other.example.com:443?security=reality&sni=other.example.com&type=tcp#OTHER"
+        untouched = (
+            "vless://id@other.example.com:443?security=reality&sni=other.example.com&type=tcp#OTHER"
+        )
 
         self.assertEqual(
-            submerge.rewrite_subscription_link(untouched, rules, resolver=lambda _host: "203.0.113.10"),
+            submerge.rewrite_subscription_link(
+                untouched, rules, resolver=lambda _host: "203.0.113.10"
+            ),
             untouched,
         )
 
@@ -440,8 +449,6 @@ class LinkRewriteTests(unittest.TestCase):
             self.write_rules(path, "front-a.example.com")
 
             submerge.SUB_LINK_REWRITES_FILE = path
-            submerge.LINK_REWRITE_RULES, submerge.LINK_REWRITE_FILE_SIG = submerge.load_link_rewrite_rules()
-
             first = submerge.rewrite_subscription_link(link)
             self.write_rules(path, "front-reloaded.example.com")
             second = submerge.rewrite_subscription_link(link)
@@ -457,7 +464,7 @@ class LinkRewriteTests(unittest.TestCase):
             self.write_rules(path, "front-valid.example.com")
 
             submerge.SUB_LINK_REWRITES_FILE = path
-            submerge.LINK_REWRITE_RULES, submerge.LINK_REWRITE_FILE_SIG = submerge.load_link_rewrite_rules()
+            submerge.current_link_rewrite_rules()
 
             with open(path, "w", encoding="utf-8") as f:
                 f.write("{")
