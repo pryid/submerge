@@ -557,6 +557,11 @@ async function copyText(text){
   try{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.left="-9999px";
        document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok; }catch(_){ return false; }
 }
+async function copyAndNotify(text){
+  const ok=text ? await copyText(text) : false;
+  const t=strings((langSel && langSel.value) || auto);
+  toast(tx(t,ok ? "ok" : "fail"));
+}
 function browserLang(){
   const requested=[];
   if (Array.isArray(navigator.languages)) requested.push(...navigator.languages);
@@ -717,8 +722,7 @@ document.addEventListener("click", async (e)=>{
     const copy=action.getAttribute("data-copy") || "";
     const open=action.getAttribute("data-open") || "";
     if (copy) {
-      const ok=await copyText(copy);
-      toast(ok?tx(t, "ok"):tx(t, "fail"));
+      await copyAndNotify(copy);
       return;
     }
     if (open) {
@@ -728,21 +732,14 @@ document.addEventListener("click", async (e)=>{
     }
   }
   const b=e.target.closest("button.row"); if(!b) return;
-  const ok=await copyText(b.getAttribute("data-copy")||"");
-  const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
+  await copyAndNotify(b.getAttribute("data-copy")||"");
 });
-if (copySubEl) copySubEl.addEventListener("click", async ()=>{
-  const ok=await copyText(SUB_URL); const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
-});
-if (copyAllEl) copyAllEl.addEventListener("click", async ()=>{
+if (copySubEl) copySubEl.addEventListener("click",()=>copyAndNotify(SUB_URL));
+if (copyAllEl) copyAllEl.addEventListener("click",()=>{
   const items=Array.from(document.querySelectorAll("#list button.row"))
     .map((x)=>x.getAttribute("data-link")||x.getAttribute("data-copy")||"")
     .filter(Boolean);
-  const ok=items.length>0 ? await copyText(items.join("\n")) : false;
-  const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
+  return copyAndNotify(items.join("\n"));
 });
-if (copyRawEl) copyRawEl.addEventListener("click", async ()=>{
-  const ok=await copyText((rawEl && rawEl.textContent)||"");
-  const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));
-});
+if (copyRawEl) copyRawEl.addEventListener("click",()=>copyAndNotify(rawEl?.textContent || ""));
 </script></body></html>
