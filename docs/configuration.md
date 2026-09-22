@@ -168,3 +168,9 @@ Preserve permissions and SELinux labels when replacing files.
 Code and bundled assets are updated through image releases. In source checkouts,
 HTML, translations and Mihomo templates are reread on requests. Quadlet environment
 changes require `systemctl daemon-reload` and a service restart.
+
+## HWID
+
+Submerge does not yet forward device identity headers. Sources that require HWID
+may reject its requests. See the [HWID integration proposal](hwid.md) for the
+panel's behavior, forwarding options and per-panel versus global device limits.
