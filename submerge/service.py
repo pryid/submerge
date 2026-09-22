@@ -2,6 +2,7 @@
 
 import base64
 import html
+import ipaddress
 import json
 import os
 import re
@@ -615,6 +616,71 @@ def amneziawg_config(link: str) -> str | None:
     return None
 
 
+def wireguard_config(link: str) -> str | None:
+    """Convert a WireGuard share URI to a native config without guessing peer credentials."""
+    try:
+        if len(link) > 8192:
+            return None
+        parsed = urlparse(link)
+        if parsed.scheme.lower() not in {"wireguard", "wg"} or parsed.path not in {"", "/"}:
+            return None
+        params = dict(parse_qsl(parsed.query))
+
+        def pick(*names):
+            value = next((params[name] for name in names if params.get(name)), "")
+            if any(ord(char) < 32 or ord(char) == 127 for char in value):
+                raise ValueError("Control character in configuration")
+            return value.strip()
+
+        def key(value):
+            if len(base64.b64decode(value, validate=True)) != 32:
+                raise ValueError("Invalid WireGuard key")
+            return value
+
+        def addresses(value):
+            return ", ".join(str(ipaddress.ip_interface(part.strip())) for part in value.split(","))
+
+        private = key(unquote(parsed.username or ""))
+        public = key(pick("publickey", "publicKey", "public_key", "peerPublicKey"))
+        address = addresses(pick("address", "ip"))
+        host = parsed.hostname or ""
+        try:
+            host = str(ipaddress.ip_address(host))
+        except ValueError:
+            host = host.encode("idna").decode("ascii")
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", host):
+                return None
+        port = parsed.port
+        if not port or parsed.password is not None:
+            return None
+        lines = ["[Interface]", f"PrivateKey = {private}", f"Address = {address}"]
+        dns = pick("dns")
+        if dns:
+            for value in dns.split(","):
+                if not re.fullmatch(r"[A-Za-z0-9_.:-]+", value.strip()):
+                    return None
+            lines.append(f"DNS = {dns}")
+        mtu = pick("mtu")
+        if mtu:
+            if not mtu.isdecimal() or not 576 <= int(mtu) <= 65535:
+                return None
+            lines.append(f"MTU = {int(mtu)}")
+        lines.extend(["", "[Peer]", f"PublicKey = {public}"])
+        psk = pick("presharedkey", "preshared_key", "pre-shared-key", "psk")
+        if psk:
+            lines.append(f"PresharedKey = {key(psk)}")
+        allowed = addresses(pick("allowedips", "allowed_ips") or "0.0.0.0/0, ::/0")
+        lines.extend([f"AllowedIPs = {allowed}", f"Endpoint = {host_for_netloc(host)}:{port}"])
+        keepalive = pick("keepalive", "persistentkeepalive", "persistent_keepalive")
+        if keepalive:
+            if not keepalive.isdecimal() or not 0 <= int(keepalive) <= 65535:
+                return None
+            lines.append(f"PersistentKeepalive = {int(keepalive)}")
+        return "\n".join(lines)
+    except (ValueError, UnicodeError):
+        return None
+
+
 def item_name(link: str, idx: int, config: str | None = None):
     try:
         p = urlparse(link)
@@ -625,7 +691,7 @@ def item_name(link: str, idx: int, config: str | None = None):
             for line in config.splitlines():
                 if line.startswith("#") and (remark := line[1:].strip()):
                     return remark
-            return "AmneziaWG"
+            return "AmneziaWG" if p.scheme.lower() == "vpn" else "WireGuard"
         vn = vmess_name(link)
         if vn:
             return vn
@@ -1010,6 +1076,9 @@ def render_html(
     if lines:
         for i, ln in enumerate(lines, start=1):
             config = amneziawg_config(ln)
+            protocol = "amneziawg" if config is not None else "wireguard"
+            if config is None:
+                config = wireguard_config(ln)
             nm = html.escape(item_name(ln, i, config))
             esc = html.escape(ln)
             copied = html.escape(config if config is not None else ln)
@@ -1026,11 +1095,21 @@ def render_html(
             )
             if config is not None:
                 download = base64.b64encode(config.encode("utf-8")).decode("ascii")
+                # Dense QR codes become impractical on phones; always retain the file export.
+                config_qr = qr_svg_data_uri(config) if len(config.encode("utf-8")) <= 1800 else None
+                qr_html = (
+                    '<details class="config-qr"><summary data-i18n="showConfigQr">QR</summary>'
+                    f'<img src="{config_qr}" alt="{protocol} configuration QR" loading="lazy"/>'
+                    "</details>"
+                    if config_qr
+                    else '<span class="usage-sub" data-i18n="configQrUnavailable">Use the .conf file</span>'
+                )
                 row = (
                     f'<div class="config-row">{row}'
+                    '<div class="config-actions">'
                     f'<a class="btn" href="data:text/plain;charset=utf-8;base64,{download}" '
-                    f'download="amneziawg-{i}.conf" data-i18n="downloadConfig">'
-                    "Download .conf</a></div>"
+                    f'download="{protocol}-{i}.conf" data-i18n="downloadConfig">'
+                    f"Download .conf</a>{qr_html}</div></div>"
                 )
             items.append(row)
     items_html = (

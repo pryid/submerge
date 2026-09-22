@@ -4,7 +4,8 @@ A small HTTP service that merges subscriptions, deduplicates proxy links, applie
 optional rewrites and aggregates traffic counters. It serves raw subscriptions,
 Mihomo profiles, Happ/v2RayTun metadata and a browser page with QR codes.
 Sources can use custom subscription paths and plaintext or base64 URI lists.
-The browser shows per-source usage and expiry.
+The browser shows per-source usage and expiry, and exports WireGuard/AmneziaWG
+configurations as `.conf` files and QR codes.
 
 Production runs from a ready-to-use OCI image. The server needs only a Quadlet and
 configuration files; code, Python dependencies and default templates live in the image.

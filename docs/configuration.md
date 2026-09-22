@@ -137,6 +137,18 @@ AmneziaVPN keys, JSON payloads and malformed links remain ordinary URI entries.
 The panel's native link generators emit uncompressed text, so no decompression
 is implemented. Browser export does not convert these links into Mihomo proxies.
 
+Native WireGuard `wireguard://` and `wg://` links also support copy and `.conf`
+download. The converter reads the private key, endpoint, peer public key and
+interface addresses, plus DNS, MTU, preshared key, allowed IPs and keepalive when
+present. It supports IPv6 endpoints and URL-encoded keys. Missing required data
+or invalid fields leave the URI unchanged instead of inventing credentials or
+an interface address. Allowed IPs default to `0.0.0.0/0, ::/0`.
+
+WG and AWG exports include an expandable QR containing the same `.conf` text as
+the download. Configurations larger than 1800 UTF-8 bytes or failed QR generation
+retain copy/download actions without a QR. The main QR still contains the
+subscription URL; **Copy all** still copies URI lines.
+
 Explicit formats take precedence over automatic negotiation. Mihomo uses a proxy
 provider pointing back to `?format=base64`, sharing merge and rewrite behavior.
 To customize Mihomo, place a template at `/etc/submerge/mihomo.yaml` and set

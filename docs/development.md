@@ -51,7 +51,7 @@ CI sets this automatically.
 - `tests/test_service.py`: negotiation, metadata, rewrites and rendering.
 - `tests/test_http.py`: actual HTTP process, local upstream fixtures and optional containers.
 - `tests/test_amneziawg.py`: 3x-ui configuration decoding, names, browser copy/download and escaping.
-- `tests/test_subscriptions.py`: source templates, plaintext/base64 merging and expiry.
+- `tests/test_subscriptions.py`: source templates, plaintext/base64 merging, expiry and WireGuard export.
 - `tests/test_ci.py`: documentation filtering, manual publication and release ordering.
 
 The HTTP suite checks merged links, traffic totals, partial-source policy,

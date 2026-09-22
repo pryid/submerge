@@ -2,6 +2,18 @@
 
 import base64
 from html.parser import HTMLParser
+from urllib.parse import urlencode
+
+WG_LINK = (
+    "wireguard://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%3D@node.example.com:51820?"
+    + urlencode(
+        {
+            "publickey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+            "address": "192.0.2.2/32",
+            "dns": "192.0.2.53",
+        }
+    )
+)
 
 AWG_CONFIG = """[Interface]
 PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

@@ -1,14 +1,44 @@
-"""Subscription source compatibility and expiry accounting."""
+"""Source compatibility, expiry accounting and native WireGuard export."""
 
 import base64
 import json
 import unittest
 from unittest.mock import patch
+from urllib.parse import quote, urlencode
 
 from submerge import service
+from tests.fixtures import AWG_CONFIG, SubscriptionHTML, vpn_link
 
+PRIVATE = base64.b64encode(bytes(range(32))).decode()
+PUBLIC = base64.b64encode(bytes(range(32, 64))).decode()
 LINK = "vless://demo@node.example.com:443#Demo"
 OTHER = "trojan://demo@other.example.com:443#Other"
+
+
+def wg_link(**overrides):
+    params = {
+        "publickey": PUBLIC,
+        "address": "192.0.2.2/32,2001:db8::2/128",
+        "dns": "192.0.2.53",
+        "mtu": "1420",
+        "keepalive": "25",
+    }
+    params.update(overrides)
+    return (
+        f"wireguard://{quote(PRIVATE, safe='')}@[2001:db8::1]:51820?{urlencode(params)}#Demo%20WG"
+    )
+
+
+def render(links, sources=None, userinfo=None):
+    return service.render_html(
+        "demo",
+        "https://example.com/sub-merge/demo",
+        service.lines_to_b64(links),
+        links,
+        userinfo or service.aggregate_userinfo([]),
+        None,
+        sources,
+    )
 
 
 class SourcesTests(unittest.TestCase):
@@ -144,3 +174,72 @@ class ExpiryTests(unittest.TestCase):
         self.assertEqual(result["expire"], 1900000000)
         self.assertFalse(result["expiry_complete"])
         self.assertIsNone(self.aggregate("expire=0", "")["expire"])
+
+
+class WireGuardTests(unittest.TestCase):
+    def test_native_export_preserves_addresses_keys_and_optional_fields(self):
+        config = service.wireguard_config(wg_link(presharedkey=PRIVATE))
+        self.assertIn(f"PrivateKey = {PRIVATE}", config)
+        self.assertIn(f"PublicKey = {PUBLIC}", config)
+        self.assertIn(f"PresharedKey = {PRIVATE}", config)
+        self.assertIn("Address = 192.0.2.2/32, 2001:db8::2/128", config)
+        self.assertIn("Endpoint = [2001:db8::1]:51820", config)
+        self.assertIn("DNS = 192.0.2.53", config)
+        self.assertIn("MTU = 1420", config)
+        self.assertIn("PersistentKeepalive = 25", config)
+        self.assertIn("AllowedIPs = 0.0.0.0/0, ::/0", config)
+
+    def test_aliases_encoded_plus_keys_and_minimal_config(self):
+        key = base64.b64encode(b"\xfb" * 32).decode()
+        link = f"wg://{quote(key, safe='')}@node.example.com:51820?" + urlencode(
+            {"public_key": key, "ip": "192.0.2.2/32", "allowed_ips": "192.0.2.0/24", "psk": key}
+        )
+        config = service.wireguard_config(link)
+        self.assertIn(f"PrivateKey = {key}", config)
+        self.assertIn("AllowedIPs = 192.0.2.0/24", config)
+        self.assertNotIn("DNS =", config)
+        self.assertNotIn("MTU =", config)
+
+    def test_invalid_fields_and_config_injection_keep_original_link(self):
+        for overrides in [
+            {"publickey": "bad"},
+            {"address": ""},
+            {"address": "bad"},
+            {"mtu": "abc"},
+            {"mtu": "0"},
+            {"keepalive": "-1"},
+            {"dns": "192.0.2.53\nPostUp = injected"},
+            {"presharedkey": "bad"},
+            {"allowedips": "bad"},
+        ]:
+            link = wg_link(**overrides)
+            with self.subTest(overrides=overrides):
+                self.assertIsNone(service.wireguard_config(link))
+                page = SubscriptionHTML(render([link]))
+                self.assertEqual(page.rows[0]["data-copy"], link)
+                self.assertEqual(page.downloads, [])
+        for link in ["wg://bad", wg_link().replace(":51820", ":99999"), LINK]:
+            self.assertIsNone(service.wireguard_config(link))
+
+    def test_copy_file_and_qr_use_same_configuration_bulk_keeps_uri(self):
+        link = wg_link()
+        config = service.wireguard_config(link)
+        with patch.object(
+            service, "qr_svg_data_uri", return_value="data:image/svg+xml;base64,PHN2Zy8+"
+        ) as qr:
+            page = SubscriptionHTML(render([link, vpn_link(), LINK]))
+        self.assertEqual([row["data-link"] for row in page.rows], [link, vpn_link(), LINK])
+        self.assertEqual(page.rows[0]["data-copy"], config)
+        self.assertEqual(page.downloads[0]["download"], "wireguard-1.conf")
+        self.assertEqual(base64.b64decode(page.downloads[0]["href"].split(",")[1]).decode(), config)
+        self.assertIn((config,), [call.args for call in qr.call_args_list])
+        self.assertIn((AWG_CONFIG,), [call.args for call in qr.call_args_list])
+        self.assertEqual(len([attrs for tag, attrs in page.tags if tag == "img"]), 3)
+
+    def test_large_awg_config_keeps_download_without_qr(self):
+        config = AWG_CONFIG + "\n#" + "x" * 2000
+        with patch.object(service, "qr_svg_data_uri", return_value=None) as qr:
+            page = SubscriptionHTML(render([vpn_link(config)]))
+        self.assertEqual(qr.call_count, 1)  # Only the subscription URL.
+        self.assertEqual(len(page.downloads), 1)
+        self.assertTrue(any(a.get("data-i18n") == "configQrUnavailable" for _, a in page.tags))

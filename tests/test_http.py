@@ -19,7 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
-from tests.fixtures import AWG_CONFIG, SubscriptionHTML, vpn_link
+from tests.fixtures import AWG_CONFIG, WG_LINK, SubscriptionHTML, vpn_link
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = os.environ.get("SUBMERGE_TEST_IMAGE")
@@ -54,6 +54,8 @@ class Upstream(BaseHTTPRequestHandler):
         body = base64.b64encode(LINK.encode())
         if sub_id == "awg":
             body = base64.b64encode((LINK + "\n" + vpn_link()).encode())
+        elif sub_id == "wg":
+            body = WG_LINK.encode()
         elif sub_id == "mixed" and source == "b":
             body = (LINK + "\n" + LINK.replace("node.example.com", "other.example.com")).encode()
         elif sub_id == "missing":
@@ -294,13 +296,31 @@ class HTTPTests(unittest.TestCase):
         self.assertFalse(partial_sources[1]["available"])
         self.assertIsNone(partial_sources[1]["userinfo"])
 
+    def test_wireguard_native_export_and_qr(self):
+        status, _, body = request(self.url + "/sub/wg?format=html")
+        self.assertEqual(status, 200)
+        page = SubscriptionHTML(body.decode())
+        self.assertEqual(page.downloads[0]["download"], "wireguard-1.conf")
+        config = page.rows[0]["data-copy"]
+        self.assertIn("[Interface]", config)
+        self.assertIn("Endpoint = node.example.com:51820", config)
+        self.assertEqual(base64.b64decode(page.downloads[0]["href"].split(",")[1]).decode(), config)
+        self.assertEqual(page.rows[0]["data-link"], WG_LINK + "&sni=front.example.com")
+        if IMAGE or importlib.util.find_spec("qrcode"):
+            self.assertTrue(
+                any(
+                    tag == "img" and attrs.get("alt") == "wireguard configuration QR"
+                    for tag, attrs in page.tags
+                )
+            )
+
     @unittest.skipUnless(
         IMAGE or importlib.util.find_spec("qrcode"), "qrcode is not installed locally"
     )
     def test_html_contains_qr(self):
         _, _, body = request(self.url + "/sub/demo?format=html")
         self.assertIn(b"data:image/svg+xml;base64,", body)
-        self.assertNotIn(b"QR unavailable", body)
+        self.assertNotIn(b">QR unavailable</div>", body)
 
     def test_head_and_errors(self):
         for path in (
