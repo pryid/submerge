@@ -119,6 +119,7 @@ class SourcesTests(unittest.TestCase):
         self.assertEqual(fetch.call_args_list[1].args, ("https://b.example.com/custom/demo",))
         self.assertEqual([s["index"] for s in result[6]], [1, 2])
         self.assertEqual([s["name"] for s in result[6]], ["Demo", "Demo, Other"])
+        self.assertEqual([s["items"] for s in result[6]], [[1], [1, 2]])
         self.assertTrue(all(s["available"] for s in result[6]))
 
     def test_failed_source_has_no_fabricated_usage_and_does_not_leak_url(self):
@@ -135,6 +136,7 @@ class SourcesTests(unittest.TestCase):
             result = service.merge_from_all("demo")
         self.assertIsNone(result[6][1]["userinfo"])
         self.assertIsNone(result[6][1]["name"])
+        self.assertEqual(result[6][1]["items"], [])
         self.assertNotIn("hidden", result[4])
         self.assertNotIn("example.com", json.dumps(result[6]))
 
@@ -158,6 +160,31 @@ class SourcesTests(unittest.TestCase):
         self.assertNotIn(name, page)
         sources = json.loads(page.split("const SOURCES = ", 1)[1].split(";\n", 1)[0])
         self.assertEqual(sources[0]["name"], result[6][0]["name"])
+
+    def test_connection_usage_tracks_rewritten_duplicates_after_failed_source(self):
+        with (
+            patch.object(
+                service,
+                "current_sub_bases",
+                return_value=["https://a.example.com", "https://b.example.com"],
+            ),
+            patch.object(service, "ALLOW_PARTIAL", True),
+            patch.object(
+                service,
+                "fetch",
+                side_effect=[(503, "unavailable", {}), (200, LINK + "\n" + OTHER, {})],
+            ),
+            patch.object(service, "rewrite_subscription_lines", return_value=[OTHER, OTHER]),
+        ):
+            result = service.merge_from_all("demo")
+        self.assertEqual(result[3], [OTHER])
+        self.assertEqual([s["items"] for s in result[6]], [[], [1]])
+        page = SubscriptionHTML(render(result[3], result[6]))
+        usage = [attrs for _, attrs in page.tags if attrs.get("class") == "connection-usage"]
+        self.assertEqual([attrs["data-item"] for attrs in usage], ["1"])
+        self.assertEqual([row["data-link"] for row in page.rows], [OTHER])
+        self.assertFalse(any(attrs.get("id") == "sourceDetails" for _, attrs in page.tags))
+        self.assertTrue(any(attrs.get("id") == "listStatus" for _, attrs in page.tags))
 
 
 class ExpiryTests(unittest.TestCase):

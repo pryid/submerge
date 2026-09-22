@@ -163,9 +163,16 @@ cursor:pointer;display:grid;gap:6px;margin-bottom:8px;transition:border-color .1
 .config-qr summary{cursor:pointer;padding:10px;color:var(--ac);font-size:13px}
 .config-qr img{display:block;width:300px;max-width:100%;height:auto;background:white;border-radius:12px}
 .expiry{margin-top:8px;font-size:12px;color:var(--m)}
-.source-list{padding:0 16px 12px}
-.source-row{padding:12px 0;border-top:1px solid var(--line);font-size:12px;color:var(--m);overflow-wrap:anywhere}
-.source-row strong{display:block;color:var(--t);margin-bottom:4px}
+.connection-card{margin-bottom:12px;border:1px solid var(--line);border-radius:13px;overflow:hidden;min-width:0}
+.connection-card:last-child{margin-bottom:0}
+.connection-card .row{margin-bottom:0;border:0;border-radius:0}
+.connection-card .config-row{margin-bottom:0}
+.connection-card .config-actions{padding:0 12px 10px}
+.connection-usage{padding:0 12px}
+.source-usage{padding:10px 0;border-top:1px solid var(--line);font-size:12px;line-height:1.6;color:var(--m);overflow-wrap:anywhere}
+.source-usage strong{display:block;color:var(--t);font-size:13px}
+.source-caption{margin-bottom:4px;font-weight:600}
+.source-shared{font-size:11px;color:var(--mm);margin-top:3px}
 .build-revision{margin-top:24px;text-align:center;color:var(--mm);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
 .row-action{font-size:11.5px;color:var(--ac)}
 .name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -257,11 +264,6 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
     </div>
   </div>
 
-  <details class="raw" id="sourceDetails" hidden>
-    <summary data-i18n="sources">Sources</summary>
-    <div class="source-list" id="sourceList"></div>
-  </details>
-
   <div class="panel">
     <div class="hd"><div class="hd-title" id="clientsLbl"></div><div class="hd-meta" id="clientPlatformLbl"></div></div>
     <div class="clientbd">
@@ -274,7 +276,7 @@ details.raw[open]>summary::before{transform:rotate(45deg)}
 
   <div class="panel">
     <div class="hd"><div class="hd-title" id="listLbl"></div><div class="hd-meta" id="hint"></div></div>
-    <div class="bd" id="list">$ITEMS</div>
+    <div class="bd" id="list">$ITEMS<div id="listStatus" hidden></div></div>
   </div>
 
   <details class="raw">
@@ -396,27 +398,39 @@ function renderSources(lang){
   if (SOURCES.length>1 && EXPIRY.expire>0) label=tx(t,"nearestExpiry")+" "+label;
   if (!EXPIRY.complete && SOURCES.length) label+=" · "+tx(t,"partialExpiry");
   expiry.textContent=label;
-  const details=byId("sourceDetails"), list=byId("sourceList");
-  details.hidden=!SOURCES.length;
-  list.replaceChildren();
-  SOURCES.forEach((source)=>{
-    const row=document.createElement("div"); row.className="source-row";
-    const name=document.createElement("strong");
-    name.textContent=source.name || fmt(tx(t,"sourceName"),{n:source.index});
-    row.append(name);
-    const body=document.createElement("div");
-    if (!source.available) {
-      body.textContent=tx(t,"sourceUnavailable");
-    } else if (!source.has_userinfo) {
-      body.textContent=tx(t,"noSourceStats");
-    } else {
-      const ui=source.userinfo;
-      const total=ui.total===null?"—":ui.total===0?"∞":gib(ui.total)+" GiB";
-      body.textContent=fmt(tx(t,"sourceTraffic"),{upload:gib(ui.upload),download:gib(ui.download),total})
-        +" · "+expiryText(ui.expire,lang);
-    }
-    row.append(body); list.append(row);
+  document.querySelectorAll(".connection-usage").forEach((block)=>{
+    const sources=SOURCES.filter((source)=>(source.items||[]).includes(Number(block.dataset.item)));
+    block.replaceChildren();
+    block.hidden=!sources.length;
+    sources.forEach((source)=>block.append(sourceUsage(source,lang,sources.length>1)));
   });
+  const status=byId("listStatus");
+  const unlisted=SOURCES.filter((source)=>!(source.items||[]).length);
+  status.replaceChildren();
+  status.hidden=!unlisted.length;
+  unlisted.forEach((source)=>status.append(sourceUsage(source,lang,true)));
+}
+function sourceUsage(source,lang,showName){
+  const t=strings(lang), row=document.createElement("div");
+  row.className="source-usage";
+  function line(text,tag="div",className=""){
+    const el=document.createElement(tag); el.className=className; el.textContent=text; row.append(el);
+  }
+  if (showName) line(source.name || fmt(tx(t,"sourceName"),{n:source.index}),"div","source-caption");
+  if (!source.available) {
+    line(tx(t,"sourceUnavailable"));
+  } else if (!source.has_userinfo || !source.userinfo) {
+    line(tx(t,"noSourceStats"));
+  } else {
+    const ui=source.userinfo;
+    if (ui.total===0) line(tx(t,"unlim"),"strong");
+    else if (ui.total===null) line(tx(t,"no"),"strong");
+    else line(fmt(tx(t,"sourceRemaining"),{remain:gib(Math.max(0,ui.total-ui.used)),total:gib(ui.total)}),"strong");
+    line(fmt(tx(t,"sourceTraffic"),{upload:gib(ui.upload),download:gib(ui.download)}));
+    line(expiryText(ui.expire,lang));
+    if ((source.items||[]).length>1) line(fmt(tx(t,"sourceShared"),{n:source.items.length}),"div","source-shared");
+  }
+  return row;
 }
 function renderUsage(lang){
   const t=strings(lang);

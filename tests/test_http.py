@@ -289,6 +289,10 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual([s["userinfo"]["expire"] for s in sources], [1900000000, 1800000000])
         self.assertTrue(all(s["available"] for s in sources))
         self.assertEqual([s["name"] for s in sources], ["Demo", "Demo"])
+        self.assertEqual([s["items"] for s in sources], [[1], [1, 2]])
+        self.assertIn(b'class="connection-usage" data-item="1"', page)
+        self.assertIn(b'class="connection-usage" data-item="2"', page)
+        self.assertNotIn(b'id="sourceDetails"', page)
         self.assertIn(b'"expire": 1800000000, "complete": true', page)
         _, _, partial_page = request(self.url + "/sub/partial?format=html")
         partial_sources = json.loads(

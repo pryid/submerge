@@ -742,6 +742,7 @@ def merge_from_all(sub_id: str):
             {
                 "index": index,
                 "name": None,
+                "items": [],
                 "available": available,
                 "status": code,
                 "has_userinfo": any(
@@ -796,13 +797,14 @@ def merge_from_all(sub_id: str):
         decoded_sets.append(lines)
 
     # Merge and deduplicate while preserving upstream order.
-    seen = set()
+    seen = {}
     merged = []
-    for lines in decoded_sets:
+    for source, lines in zip((s for s in sources if s["available"]), decoded_sets):
         for ln in lines:
             if ln not in seen:
-                seen.add(ln)
                 merged.append(ln)
+                seen[ln] = len(merged)
+        source["items"] = list(dict.fromkeys(seen[ln] for ln in lines))
 
     note = None
     # Explain partial results in the browser view.
@@ -1121,7 +1123,10 @@ def render_html(
                     f'download="{protocol}-{i}.conf" data-i18n="downloadConfig">'
                     f"Download .conf</a>{qr_html}</div></div>"
                 )
-            items.append(row)
+            items.append(
+                f'<div class="connection-card">{row}'
+                f'<div class="connection-usage" data-item="{i}" hidden></div></div>'
+            )
     items_html = (
         "\n".join(items)
         if items

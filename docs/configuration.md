@@ -74,14 +74,18 @@ unknown. This is a conservative nearest-expiry hint for clients, not a claim
 that all servers stop working on that date. Submerge does not remove links based
 on this metadata.
 
-The browser shows the nearest expiry, days remaining, and a collapsible breakdown
-of uploaded/downloaded traffic, quota and expiry per source. Traffic and quotas
+The browser shows the nearest expiry and days remaining. Each connection in the
+list includes its source's remaining quota, uploaded/downloaded traffic and expiry.
+Remaining quota is the limit minus upload and download, floored at zero; unlimited
+and unknown quotas are shown explicitly. Traffic and quotas
 are displayed in GiB (1024³ bytes); subscription headers retain the original byte
 counts. Missing expiry or unavailable sources mark the summary as incomplete.
 Unavailable sources do not appear to have zero usage.
-Source labels use the same names as their connections,
-listing distinct names in subscription order. Unavailable or unsupported sources
-fall back to their configuration number. Upstream URLs, query tokens and credentials
+Connections from one source share its quota, with a note when several connections
+use it. A deduplicated connection supplied by multiple sources shows each source's
+statistics separately. Sources without listed connections, including unavailable
+ones, appear at the bottom of the list. Source labels use connection names or fall
+back to their configuration number. Upstream URLs, query tokens and credentials
 are not used as labels or shown in failure notes.
 
 ## Link rewrites
