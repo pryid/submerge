@@ -550,11 +550,43 @@ def vmess_name(link: str):
         return None
 
 
-def item_name(link: str, idx: int):
+def amneziawg_config(link: str) -> str | None:
+    """Decode the uncompressed .conf payload emitted by 3x-ui's vpn:// links."""
+    payload = link.partition("#")[0]
+    # Bound decoding/rendering work; compressed and JSON AmneziaVPN keys stay opaque.
+    if len(payload) > 90_000:
+        return None
+    match = re.fullmatch(r"vpn://([A-Za-z0-9_-]+={0,2})", payload, re.I)
+    if not match:
+        return None
+    encoded = match[1]
+    if "=" in encoded and len(encoded) % 4:
+        return None
+    try:
+        raw = base64.b64decode(encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True)
+        if len(raw) > 65_536:
+            return None
+        config = raw.decode("utf-8", errors="strict")
+    except ValueError:
+        return None
+    if any(ord(char) < 32 and char not in "\r\n\t" for char in config):
+        return None
+    if all(re.search(rf"^\[{section}\]\r?$", config, re.M) for section in ("Interface", "Peer")):
+        return config
+    return None
+
+
+def item_name(link: str, idx: int, config: str | None = None):
     try:
         p = urlparse(link)
         if p.fragment:
             return unquote(p.fragment)
+        config = config if config is not None else amneziawg_config(link)
+        if config is not None:
+            for line in config.splitlines():
+                if line.startswith("#") and (remark := line[1:].strip()):
+                    return remark
+            return "AmneziaWG"
         vn = vmess_name(link)
         if vn:
             return vn
@@ -922,12 +954,30 @@ def render_html(sub_id: str, sub_url: str, merged_b64: str, lines, userinfo_agg,
     items = []
     if lines:
         for i, ln in enumerate(lines, start=1):
-            nm = html.escape(item_name(ln, i))
+            config = amneziawg_config(ln)
+            nm = html.escape(item_name(ln, i, config))
             esc = html.escape(ln)
-            items.append(
-                f'<button class="row" type="button" data-copy="{esc}" title="{esc}">'
-                f'<div class="name">{nm}</div><div class="mono">{esc}</div></button>'
+            copied = html.escape(config if config is not None else ln)
+            copied = copied.replace("\r", "&#13;").replace("\n", "&#10;")
+            label = (
+                '<span class="row-action" data-i18n="copyConfig">Copy configuration</span>'
+                if config is not None
+                else ""
             )
+            row = (
+                f'<button class="row" type="button" data-copy="{copied}" '
+                f'data-link="{esc}" title="{esc}">'
+                f'<div class="name">{nm}</div><div class="mono">{esc}</div>{label}</button>'
+            )
+            if config is not None:
+                download = base64.b64encode(config.encode("utf-8")).decode("ascii")
+                row = (
+                    f'<div class="config-row">{row}'
+                    f'<a class="btn" href="data:text/plain;charset=utf-8;base64,{download}" '
+                    f'download="amneziawg-{i}.conf" data-i18n="downloadConfig">'
+                    "Download .conf</a></div>"
+                )
+            items.append(row)
     items_html = (
         "\n".join(items)
         if items

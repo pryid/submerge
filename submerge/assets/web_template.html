@@ -155,6 +155,10 @@ text-align:center;line-height:1.15;white-space:normal;overflow-wrap:anywhere}
 cursor:pointer;display:grid;gap:6px;margin-bottom:8px;transition:border-color .15s,background .15s}
 .row:last-child{margin-bottom:0}
 .row:hover{background:var(--surf2);border-color:var(--line2)}
+.config-row{margin-bottom:8px;display:grid;gap:6px}
+.config-row .row{margin-bottom:0}
+.config-row>a{justify-self:start}
+.row-action{font-size:11.5px;color:var(--ac)}
 .name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -412,6 +416,10 @@ function apply(lang){
   if (copySubEl) copySubEl.textContent=tx(t, "copyUrl");
   if (copyAllEl) copyAllEl.textContent=tx(t, "copyAll");
   if (copyRawEl) copyRawEl.textContent=tx(t, "copyRaw");
+  document.querySelectorAll("[data-i18n]").forEach((el)=>{
+    const label=tx(t,el.getAttribute("data-i18n"));
+    if (label) el.textContent=label;
+  });
   renderUsage(lang);
   if (clientsLblEl) clientsLblEl.textContent=tx(t, "clients");
   if (otherClientsLblEl) otherClientsLblEl.textContent=tx(t, "clientOther");
@@ -615,7 +623,7 @@ if (copySubEl) copySubEl.addEventListener("click", async ()=>{
 });
 if (copyAllEl) copyAllEl.addEventListener("click", async ()=>{
   const items=Array.from(document.querySelectorAll("#list button.row"))
-    .map((x)=>x.getAttribute("data-copy")||"")
+    .map((x)=>x.getAttribute("data-link")||x.getAttribute("data-copy")||"")
     .filter(Boolean);
   const ok=items.length>0 ? await copyText(items.join("\n")) : false;
   const t=strings((langSel && langSel.value) || auto); toast(ok?tx(t, "ok"):tx(t, "fail"));

@@ -18,6 +18,8 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
+from tests.fixtures import AWG_CONFIG, SubscriptionHTML, vpn_link
+
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = os.environ.get("SUBMERGE_TEST_IMAGE")
 ENGINE = os.environ.get("CONTAINER_ENGINE", "podman")
@@ -49,7 +51,9 @@ class Upstream(BaseHTTPRequestHandler):
         source, _, sub_id = self.path.strip("/").split("/")
         status = 200
         body = base64.b64encode(LINK.encode())
-        if sub_id == "missing":
+        if sub_id == "awg":
+            body = base64.b64encode((LINK + "\n" + vpn_link()).encode())
+        elif sub_id == "missing":
             status, body = 404, b"missing"
         elif sub_id == "broken" or (sub_id == "partial" and source == "b"):
             status, body = 503, b"unavailable"
@@ -226,6 +230,20 @@ class HTTPTests(unittest.TestCase):
             base64.b64decode(body).decode(), LINK.replace("old.example.com", "front.example.com")
         )
         self.assertIn("total=200", headers["Subscription-Userinfo"])
+
+    def test_amneziawg_mixed_subscription_and_browser_export(self):
+        status, _, raw = request(self.url + "/sub/awg?format=base64")
+        self.assertEqual(status, 200)
+        links = base64.b64decode(raw).decode().splitlines()
+        self.assertEqual(len(links), 2)  # Both upstreams return the same links.
+        self.assertEqual(links[1], vpn_link())
+        status, _, body = request(self.url + "/sub/awg?format=html")
+        self.assertEqual(status, 200)
+        page = SubscriptionHTML(body.decode())
+        self.assertEqual([row["data-link"] for row in page.rows], links)
+        self.assertEqual(page.rows[1]["data-copy"], AWG_CONFIG)
+        download = page.downloads[0]["href"].split(",", 1)[1]
+        self.assertEqual(base64.b64decode(download).decode(), AWG_CONFIG)
 
     def test_formats_and_metadata(self):
         for fmt in ("html", "mihomo", "happ", "v2raytun"):
