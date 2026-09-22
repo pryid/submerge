@@ -118,6 +118,7 @@ class SourcesTests(unittest.TestCase):
         self.assertEqual(service.decode_subscription_body(result[1]), ([LINK, OTHER], True))
         self.assertEqual(fetch.call_args_list[1].args, ("https://b.example.com/custom/demo",))
         self.assertEqual([s["index"] for s in result[6]], [1, 2])
+        self.assertEqual([s["name"] for s in result[6]], ["Demo", "Demo, Other"])
         self.assertTrue(all(s["available"] for s in result[6]))
 
     def test_failed_source_has_no_fabricated_usage_and_does_not_leak_url(self):
@@ -133,8 +134,30 @@ class SourcesTests(unittest.TestCase):
         ):
             result = service.merge_from_all("demo")
         self.assertIsNone(result[6][1]["userinfo"])
+        self.assertIsNone(result[6][1]["name"])
         self.assertNotIn("hidden", result[4])
         self.assertNotIn("example.com", json.dumps(result[6]))
+
+    def test_source_names_match_connections_and_are_safe_in_html(self):
+        name = '🇳🇱 NL Demo </script><script>alert("test")</script>'
+        links = [
+            LINK.split("#")[0] + "#" + quote(name),
+            OTHER.split("#")[0] + "#" + quote(name),
+            "vmess://" + base64.b64encode(json.dumps({"ps": "Demo VMess"}).encode()).decode(),
+            vpn_link(),
+            wg_link().split("#")[0],
+        ]
+        with (
+            patch.object(service, "current_sub_bases", return_value=["https://a.example.com"]),
+            patch.object(service, "fetch", return_value=(200, service.lines_to_b64(links), {})),
+            patch.object(service, "current_link_rewrite_rules", return_value={}),
+        ):
+            result = service.merge_from_all("demo")
+        self.assertEqual(result[6][0]["name"], name + ", Demo VMess, Demo AWG, WireGuard")
+        page = render(result[3], result[6])
+        self.assertNotIn(name, page)
+        sources = json.loads(page.split("const SOURCES = ", 1)[1].split(";\n", 1)[0])
+        self.assertEqual(sources[0]["name"], result[6][0]["name"])
 
 
 class ExpiryTests(unittest.TestCase):

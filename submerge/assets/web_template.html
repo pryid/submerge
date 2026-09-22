@@ -402,7 +402,7 @@ function renderSources(lang){
   SOURCES.forEach((source)=>{
     const row=document.createElement("div"); row.className="source-row";
     const name=document.createElement("strong");
-    name.textContent=fmt(tx(t,"sourceName"),{n:source.index});
+    name.textContent=source.name || fmt(tx(t,"sourceName"),{n:source.index});
     row.append(name);
     const body=document.createElement("div");
     if (!source.available) {

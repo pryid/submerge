@@ -288,6 +288,7 @@ class HTTPTests(unittest.TestCase):
         sources = json.loads(page.decode().split("const SOURCES = ", 1)[1].split(";\n", 1)[0])
         self.assertEqual([s["userinfo"]["expire"] for s in sources], [1900000000, 1800000000])
         self.assertTrue(all(s["available"] for s in sources))
+        self.assertEqual([s["name"] for s in sources], ["Demo", "Demo"])
         self.assertIn(b'"expire": 1800000000, "complete": true', page)
         _, _, partial_page = request(self.url + "/sub/partial?format=html")
         partial_sources = json.loads(
@@ -295,6 +296,7 @@ class HTTPTests(unittest.TestCase):
         )
         self.assertFalse(partial_sources[1]["available"])
         self.assertIsNone(partial_sources[1]["userinfo"])
+        self.assertIsNone(partial_sources[1]["name"])
 
     def test_wireguard_native_export_and_qr(self):
         status, _, body = request(self.url + "/sub/wg?format=html")

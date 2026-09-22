@@ -741,6 +741,7 @@ def merge_from_all(sub_id: str):
         sources.append(
             {
                 "index": index,
+                "name": None,
                 "available": available,
                 "status": code,
                 "has_userinfo": any(
@@ -768,7 +769,9 @@ def merge_from_all(sub_id: str):
 
     # Decode every successful response before merging.
     decoded_sets = []
-    for _b, _c, body, _h in ok:
+    for source, (_b, _c, body, _h) in zip(sources, results):
+        if not source["available"]:
+            continue
         lines, ok_dec = decode_subscription_body(body)
         if not ok_dec:
             # Preserve unsupported formats by returning the first successful body.
@@ -783,7 +786,14 @@ def merge_from_all(sub_id: str):
                 sources,
             )
 
-        decoded_sets.append(rewrite_subscription_lines(lines))
+        lines = rewrite_subscription_lines(lines)
+        source["name"] = ", ".join(
+            dict.fromkeys(
+                item_name(link, i, amneziawg_config(link) or wireguard_config(link))
+                for i, link in enumerate(lines, 1)
+            )
+        )
+        decoded_sets.append(lines)
 
     # Merge and deduplicate while preserving upstream order.
     seen = set()
