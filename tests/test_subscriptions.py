@@ -106,17 +106,20 @@ class SourcesTests(unittest.TestCase):
             patch.object(
                 service,
                 "fetch",
-                side_effect=[
-                    (200, service.lines_to_b64([LINK]), {}),
-                    (200, LINK + "\n" + OTHER, {}),
-                ],
+                side_effect=lambda url: (
+                    200,
+                    service.lines_to_b64([LINK])
+                    if url.startswith("https://a.example.com/")
+                    else LINK + "\n" + OTHER,
+                    {},
+                ),
             ) as fetch,
             patch.object(service, "current_link_rewrite_rules", return_value={}),
         ):
             result = service.merge_from_all("demo")
         self.assertEqual(result[3], [LINK, OTHER])
         self.assertEqual(service.decode_subscription_body(result[1]), ([LINK, OTHER], True))
-        self.assertEqual(fetch.call_args_list[1].args, ("https://b.example.com/custom/demo",))
+        fetch.assert_any_call("https://b.example.com/custom/demo")
         self.assertEqual([s["index"] for s in result[6]], [1, 2])
         self.assertEqual([s["name"] for s in result[6]], ["Demo", "Demo, Other"])
         self.assertEqual([s["items"] for s in result[6]], [[1], [1, 2]])
@@ -129,7 +132,15 @@ class SourcesTests(unittest.TestCase):
                 "current_sub_bases",
                 return_value=["https://a.example.com", "https://b.example.com/{id}?secret=hidden"],
             ),
-            patch.object(service, "fetch", side_effect=[(200, LINK, {}), (503, "error", {})]),
+            patch.object(
+                service,
+                "fetch",
+                side_effect=lambda url: (
+                    (200, LINK, {})
+                    if url.startswith("https://a.example.com/")
+                    else (503, "error", {})
+                ),
+            ),
             patch.object(service, "current_link_rewrite_rules", return_value={}),
             patch.object(service, "ALLOW_PARTIAL", True),
         ):
@@ -172,7 +183,11 @@ class SourcesTests(unittest.TestCase):
             patch.object(
                 service,
                 "fetch",
-                side_effect=[(503, "unavailable", {}), (200, LINK + "\n" + OTHER, {})],
+                side_effect=lambda url: (
+                    (503, "unavailable", {})
+                    if url.startswith("https://a.example.com/")
+                    else (200, LINK + "\n" + OTHER, {})
+                ),
             ),
             patch.object(service, "rewrite_subscription_lines", return_value=[OTHER, OTHER]),
         ):

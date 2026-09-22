@@ -3,7 +3,7 @@
 import logging
 import signal
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from . import service
@@ -105,5 +105,7 @@ def main():
         raise SystemExit(f"Invalid configuration: {error}") from error
     # Python is PID 1 in the image; explicitly handle container stop signals.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    with HTTPServer((service.LISTEN_HOST, service.LISTEN_PORT), SubscriptionHandler) as server:
+    with ThreadingHTTPServer(
+        (service.LISTEN_HOST, service.LISTEN_PORT), SubscriptionHandler
+    ) as server:
         server.serve_forever()

@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -46,6 +47,8 @@ def request(url, method="GET", headers=None):
 
 class Upstream(BaseHTTPRequestHandler):
     calls = 0
+    atomic_started = {source: threading.Event() for source in ("a", "b")}
+    atomic_release = threading.Event()
 
     def do_GET(self):
         type(self).calls += 1
@@ -64,6 +67,13 @@ class Upstream(BaseHTTPRequestHandler):
             status, body = 503, b"unavailable"
         elif sub_id == "empty" and source == "b":
             body = b""
+        elif sub_id == "atomic":
+            self.atomic_started[source].set()
+            if source == "a":
+                self.atomic_release.wait(3)
+            body = base64.b64encode(
+                LINK.replace("node.example.com", f"{source}.example.com").encode()
+            )
         elif sub_id in {"html", "json", "garbage"} and source == "b":
             body = {
                 "html": b"<!doctype html><h1>Upstream error</h1>",
@@ -247,6 +257,39 @@ class HTTPTests(unittest.TestCase):
             base64.b64decode(body).decode(), LINK.replace("old.example.com", "front.example.com")
         )
         self.assertIn("total=200", headers["Subscription-Userinfo"])
+
+    def test_parallel_fetch_waits_for_all_sources_before_sending_any_bytes(self):
+        for event in Upstream.atomic_started.values():
+            event.clear()
+        Upstream.atomic_release.clear()
+        endpoint = urlparse(self.url)
+        with socket.create_connection((endpoint.hostname, endpoint.port), timeout=2) as sock:
+            sock.sendall(b"GET /sub/atomic HTTP/1.0\r\nUser-Agent: Happ\r\n\r\n")
+            try:
+                for event in Upstream.atomic_started.values():
+                    self.assertTrue(event.wait(0.5), "Sources must be fetched concurrently")
+                # No success headers or partial body while the first source is pending.
+                sock.settimeout(0.05)
+                with self.assertRaises(socket.timeout):
+                    sock.recv(1)
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    health = pool.submit(request, self.url + "/healthz")
+                    try:
+                        self.assertEqual(health.result(timeout=0.5)[0], 200)
+                    finally:
+                        Upstream.atomic_release.set()
+            finally:
+                Upstream.atomic_release.set()
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                response = stream.read()
+        header_block, body = response.split(b"\r\n\r\n", 1)
+        self.assertTrue(header_block.startswith(b"HTTP/1.0 200 "))
+        self.assertIn(f"Content-Length: {len(body)}".encode(), header_block)
+        self.assertEqual(
+            base64.b64decode(body, validate=True).decode().splitlines(),
+            [LINK.replace("node.example.com", f"{source}.example.com") for source in ("a", "b")],
+        )
 
     def test_raw_clients_reject_unsupported_successful_upstream_bodies(self):
         for url in (self.url, self.strict_url):

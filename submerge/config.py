@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import threading
 
 _UNSET = object()
 
@@ -15,8 +16,13 @@ class ReloadingJSON:
         self.value = _UNSET
         self.signature = None
         self.last_error = None
+        self.lock = threading.Lock()
 
     def get(self, path):
+        with self.lock:
+            return self._get(path)
+
+    def _get(self, path):
         if path != self.path:
             self.path = path
             self.value = _UNSET

@@ -58,6 +58,8 @@ Plaintext and standard/URL-safe base64 URI lists can be mixed. Blank lines and
 Links are rewritten, merged and deduplicated in source order. Output remains base64.
 Traffic counters are aggregated across successful upstreams.
 
+Upstream requests run concurrently in a shared pool of at most eight workers.
+Client requests are handled concurrently; merging still preserves source order.
 Each raw response is assembled completely before sending headers or body, with
 an exact `Content-Length`. Successful raw responses contain one base64-encoded
 URI list, never concatenated base64 fragments. Responses are not cached.

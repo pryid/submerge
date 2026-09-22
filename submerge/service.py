@@ -7,8 +7,10 @@ import json
 import os
 import re
 import socket
+import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from http.client import HTTPException
 from string import Template
@@ -16,6 +18,9 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from .config import ReloadingJSON
+
+_FETCH_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="upstream")
+_DNS_LOCK = threading.Lock()
 
 
 # Configuration
@@ -387,7 +392,8 @@ def resolve_host_ip(host: str) -> str | None:
         return None
 
     now = time.monotonic()
-    cached = DNS_CACHE.get(host)
+    with _DNS_LOCK:
+        cached = DNS_CACHE.get(host)
     if cached and cached[0] > now:
         return cached[1]
 
@@ -405,7 +411,8 @@ def resolve_host_ip(host: str) -> str | None:
         ip = infos[0][4][0]
 
     if ip and SUB_REWRITE_DNS_TTL > 0:
-        DNS_CACHE[host] = (now + SUB_REWRITE_DNS_TTL, ip)
+        with _DNS_LOCK:
+            DNS_CACHE[host] = (now + SUB_REWRITE_DNS_TTL, ip)
     return ip
 
 
@@ -734,10 +741,11 @@ def merge_from_all(sub_id: str):
     """
     results = []
 
+    # Submit all sources together, then collect in configuration order.
+    # The shared pool bounds concurrent upstream work across HTTP requests.
+    urls = [source_url(base, sub_id) for base in current_sub_bases()]
     sources = []
-    for index, base in enumerate(current_sub_bases(), 1):
-        url = source_url(base, sub_id)
-        code, body, hdrs = fetch(url)
+    for index, (code, body, hdrs) in enumerate(_FETCH_POOL.map(fetch, urls), 1):
         available = code == 200 and bool(body.strip())
         sources.append(
             {

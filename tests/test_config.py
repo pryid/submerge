@@ -1,6 +1,8 @@
 import json
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from submerge.config import ReloadingJSON
@@ -58,6 +60,30 @@ class ConfigTests(unittest.TestCase):
         self.path.write_text("{}")
         with self.assertLogs(level="WARNING"):
             self.assertEqual(cache.get(self.path), ["first"])
+
+    def test_concurrent_readers_share_one_validated_reload(self):
+        readers = threading.Barrier(8)
+        parses = []
+
+        def parse(data, _):
+            parses.append(data)
+            return data
+
+        cache = ReloadingJSON(parse)
+        self.path.write_text('["first"]')
+        cache.get(self.path)
+        staged = self.path.with_suffix(".new")
+        staged.write_text('["second"]')
+        staged.replace(self.path)
+
+        def read(_):
+            readers.wait(timeout=3)
+            return cache.get(self.path)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            values = list(pool.map(read, range(8)))
+        self.assertEqual(values, [["second"]] * 8)
+        self.assertEqual(parses, [["first"], ["second"]])
 
 
 if __name__ == "__main__":
