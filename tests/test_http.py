@@ -60,16 +60,25 @@ class Upstream(BaseHTTPRequestHandler):
             body = (LINK + "\n" + LINK.replace("node.example.com", "other.example.com")).encode()
         elif sub_id == "missing":
             status, body = 404, b"missing"
-        elif sub_id == "broken" or (sub_id == "partial" and source == "b"):
+        elif sub_id == "broken" or (sub_id in {"partial", "truncated-error"} and source == "b"):
             status, body = 503, b"unavailable"
         elif sub_id == "empty" and source == "b":
             body = b""
+        elif sub_id in {"html", "json", "garbage"} and source == "b":
+            body = {
+                "html": b"<!doctype html><h1>Upstream error</h1>",
+                "json": json.dumps({"link": LINK}).encode(),
+                "garbage": b"YW=Jj",
+            }[sub_id]
+        elif sub_id == "utf8" and source == "b":
+            body = LINK.encode() + b"\xff"
         self.send_response(status)
         userinfo = "upload=1; download=2; total=100"
         if sub_id == "mixed":
             userinfo += "; expire=" + ("1900000000" if source == "a" else "1800000000")
         self.send_header("Subscription-Userinfo", userinfo)
-        self.send_header("Content-Length", str(len(body)))
+        truncated = sub_id in {"truncated", "truncated-error"} and source == "b"
+        self.send_header("Content-Length", str(len(body) + (10 if truncated else 0)))
         self.end_headers()
         self.wfile.write(body)
 
@@ -238,6 +247,30 @@ class HTTPTests(unittest.TestCase):
             base64.b64decode(body).decode(), LINK.replace("old.example.com", "front.example.com")
         )
         self.assertIn("total=200", headers["Subscription-Userinfo"])
+
+    def test_raw_clients_reject_unsupported_successful_upstream_bodies(self):
+        for url in (self.url, self.strict_url):
+            for sub_id in ("html", "json", "garbage"):
+                for client in ("Happ", "v2raytun", "v2rayNG"):
+                    with self.subTest(url=url, source=sub_id, client=client):
+                        status, _, body = request(
+                            f"{url}/sub/{sub_id}", headers={"User-Agent": client}
+                        )
+                        self.assertEqual(status, 502)
+                        self.assertEqual(body, b"Upstream response is not a supported URI list\n")
+
+    def test_truncated_and_invalid_utf8_sources_follow_partial_policy(self):
+        for sub_id in ("truncated", "truncated-error", "utf8"):
+            with self.subTest(source=sub_id):
+                status, headers, body = request(self.url + "/sub/" + sub_id)
+                self.assertEqual(status, 200)
+                self.assertEqual(int(headers["Content-Length"]), len(body))
+                self.assertEqual(
+                    base64.b64decode(body, validate=True).decode(),
+                    LINK.replace("old.example.com", "front.example.com"),
+                )
+                self.assertIn("total=100", headers["Subscription-Userinfo"])
+                self.assertEqual(request(self.strict_url + "/sub/" + sub_id)[0], 502)
 
     def test_amneziawg_mixed_subscription_and_browser_export(self):
         status, _, raw = request(self.url + "/sub/awg?format=base64")

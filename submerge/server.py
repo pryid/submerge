@@ -68,6 +68,9 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
                 return self.respond(200, body, "application/yaml; charset=utf-8", headers)
 
             if fmt == "base64":
+                # Never pass an upstream HTML/JSON/error page off as a subscription.
+                if status == 200 and lines is None:
+                    return self.respond(502, "Upstream response is not a supported URI list\n")
                 kind = service.raw_client_kind(self.headers, self.path)
                 extra_headers, prefix = service.raw_subscription_metadata(
                     kind, userinfo["header"], page_url

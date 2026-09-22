@@ -58,12 +58,20 @@ Plaintext and standard/URL-safe base64 URI lists can be mixed. Blank lines and
 Links are rewritten, merged and deduplicated in source order. Output remains base64.
 Traffic counters are aggregated across successful upstreams.
 
+Each raw response is assembled completely before sending headers or body, with
+an exact `Content-Length`. Successful raw responses contain one base64-encoded
+URI list, never concatenated base64 fragments. Responses are not cached.
+
 - `ALLOW_PARTIAL=1` returns available subscriptions when some sources fail.
 - `ALLOW_PARTIAL=0` returns `502` for mixed successful and failed/empty responses.
+  Use this setting if the subscription must include every configured source.
+- Truncated HTTP responses and invalid UTF-8 count as failed sources.
 - If none succeed, the first upstream HTTP error is preserved, or `502` is returned
   when all responses are network failures or empty `200` bodies.
-- If a successful body is not a supported URI list, the first successful
-  upstream body is returned unchanged.
+- If any successful body is not a supported URI list, raw client requests return
+  `502`, regardless of `ALLOW_PARTIAL`. HTML, JSON and malformed base64 are never
+  passed through as successful raw subscriptions. The browser can still show the
+  first successful upstream body for unsupported formats.
 
 ### Expiry and per-source usage
 

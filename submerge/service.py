@@ -253,13 +253,14 @@ except Exception:
 def fetch(url: str):
     req = urllib.request.Request(url, headers={"User-Agent": "submerge/5.0"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            body = r.read().decode("utf-8", errors="ignore").strip()
+        try:
+            response = urllib.request.urlopen(req, timeout=TIMEOUT)
+        except HTTPError as error:
+            response = error
+        with response as r:
+            body = r.read().decode("utf-8").strip()
             return r.status, body, dict(r.headers)
-    except HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore").strip()
-        return e.code, body, dict(e.headers)
-    except (OSError, HTTPException):
+    except (OSError, HTTPException, UnicodeError):
         return 0, "", {}
 
 
