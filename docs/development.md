@@ -48,7 +48,7 @@ CI sets this automatically.
 ## Tests
 
 - `tests/test_config.py`: validation, reloads and recovery.
-- `tests/test_diagnostics.py`: read-only configuration checks.
+- `tests/test_diagnostics.py`: configuration checks and public subscription verification.
 - `tests/test_service.py`: negotiation, metadata, rewrites and rendering.
 - `tests/test_http.py`: actual HTTP process, local upstream fixtures and optional containers.
 - `tests/test_amneziawg.py`: 3x-ui configuration decoding, names, browser copy/download and escaping.

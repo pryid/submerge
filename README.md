@@ -63,7 +63,8 @@ make test-image
 
 See [development and testing](docs/development.md) and the
 [configuration reference](docs/configuration.md).
-The [diagnostics guide](docs/diagnostics.md) covers checking configuration with `doctor`.
+The [diagnostics guide](docs/diagnostics.md) covers `doctor`, public subscription
+verification after deployment.
 
 ## Repository layout
 

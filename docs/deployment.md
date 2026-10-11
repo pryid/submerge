@@ -151,14 +151,17 @@ Restore `stable` and auto-update when ready to follow releases.
 
 ## Verify
 
-Check the mounted configuration using the command included in the image:
+Check the mounted configuration and the public subscription using commands
+included in the image:
 
 ```bash
 podman exec systemd-submerge python -m submerge doctor --require-routing happ
+podman exec -it systemd-submerge python -m submerge verify --require-routing
 ```
 
-Omit `--require-routing` if routing is intentionally absent. See
-[diagnostics](diagnostics.md) for the checks and exit codes.
+The second command prompts for the public URL without echoing it. Omit
+`--require-routing` if routing is intentionally absent. See [diagnostics](diagnostics.md)
+for stdin/automation, v2RayTun checks, exit codes and source latency measurements.
 
 Open `https://example.com/sub-merge/<id>` and check a real client. From a workstation
 checkout, the live smoke script checks raw, HTML and Mihomo responses:

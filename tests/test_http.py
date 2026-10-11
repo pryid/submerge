@@ -264,6 +264,17 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("metadata", result.stdout)
         self.assertIn("missing", result.stdout)
 
+    def test_verify_runs_inside_deployment_and_detects_missing_routing(self):
+        endpoint = self.url + "/sub/demo"
+        result = self.diagnostic("verify", "--url-stdin", "--require-routing", input=endpoint)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Content-Length matches", result.stdout)
+        self.assertNotIn(endpoint, result.stdout + result.stderr)
+        self.write_json("sub_metadata.json", {})
+        result = self.diagnostic("verify", "--url-stdin", "--require-routing", input=endpoint)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Routing header absent", result.stdout)
+
     def test_health_does_not_fetch_upstreams(self):
         before = Upstream.calls
         status, _, body = request(self.url + "/healthz")
@@ -477,6 +488,24 @@ class HTTPTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertIn(b"proxy-providers:", body)
+
+    @unittest.skipUnless(IMAGE and NGINX_IMAGE, "nginx container smoke test not enabled")
+    def test_verify_through_nginx_checks_routing_and_rejects_html(self):
+        for client in ("happ", "v2raytun"):
+            with self.subTest(client=client):
+                result = self.diagnostic(
+                    "verify",
+                    "--url-stdin",
+                    "--client",
+                    client,
+                    "--require-routing",
+                    input=self.proxy_url,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn(self.proxy_url, result.stdout + result.stderr)
+        result = self.diagnostic("verify", "--url-stdin", input=self.proxy_url + "?format=html")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("invalid base64", result.stdout)
 
 
 if __name__ == "__main__":

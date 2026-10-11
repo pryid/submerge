@@ -1,9 +1,10 @@
 # Diagnostics
 
-The image includes `doctor`; no checkout or extra packages are needed on the server.
-The command is read-only and returns `0` on success, `1` on failed checks, and `2`
-for invalid command arguments. Warnings alone do not fail a check. It does not
-print upstream URLs, routing contents or raw exception messages.
+The image includes `doctor` and `verify`; no checkout or extra packages are needed
+on the server. Both commands are read-only and return `0` on success, `1` on failed
+checks, and `2` for invalid command arguments. Warnings alone do not fail a check.
+Neither command prints subscription URLs, connection keys, routing contents or
+raw exception messages.
 
 ## Check configuration
 
@@ -31,3 +32,44 @@ not the configuration cached in an existing process.
 
 With the supplied Quadlet, `/etc/submerge` on the host is mounted at `/config` in
 the container. A metadata file left in `/opt/submerge` is not visible there.
+
+## Verify a public subscription after updating
+
+Use the public HTTPS subscription URL to include nginx and TLS in the check.
+This sends one real subscription request with the selected client's User-Agent.
+It preserves the URL and query exactly; it does not silently force `format=happ`.
+
+Interactive use prompts for the URL without echoing it:
+
+```bash
+podman exec -it systemd-submerge python -m submerge verify --require-routing
+```
+
+For a root shell or automation, pass the URL on stdin. This Bash example avoids
+putting the token in shell history or process arguments:
+
+```bash
+read -rsp 'Subscription URL: ' subscription_url
+printf '\n'
+printf '%s\n' "$subscription_url" |
+  podman exec -i systemd-submerge python -m submerge verify \
+    --url-stdin --client happ --require-routing --min-links 4
+unset subscription_url
+```
+
+Choose `--min-links` for your deployment; the default is one. Use `--client v2raytun`
+for its routing format or `--client generic` for raw base64 only. Happ is the default.
+`--require-routing` requires a valid named JSON profile in the `Routing` header;
+for Happ it also requires `Routing-Enable: 1` or `true`. Without that flag, missing
+routing is a warning, but a present malformed profile still fails.
+
+The check requires HTTP 200, a strict base64 UTF-8 URI list, the requested minimum
+connection count, and a matching `Content-Length` when supplied. HTML error pages,
+plain text, truncated responses and malformed routing fail. Downloads are limited
+to 8 MiB. `--timeout 30` sets the network operation timeout in seconds; it is not
+a wall-clock deadline for the whole download. HTTPS certificate validation stays on.
+
+This confirms the delivered format, not whether every upstream contributed: use
+`ALLOW_PARTIAL=0` if all sources must succeed. Check actual import, connection and
+geofile downloads in the client. For external reachability, also run `verify`
+from a workstation (`uv run --locked python -m submerge verify --require-routing`).
