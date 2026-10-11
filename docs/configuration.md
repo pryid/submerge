@@ -16,6 +16,7 @@ paths refer to locations **inside** the container.
 | `LISTEN_PORT` | `18080` | HTTP port |
 | `TIMEOUT` | `10` | Timeout per upstream request, in seconds |
 | `ALLOW_PARTIAL` | `1` | Allow a merged response when some sources fail |
+| `LOG_TIMINGS` | `0` | Log source latency and response metrics without subscription IDs or URLs |
 | `PAGE_TITLE` | `Sub-merge` | Browser page title |
 | `SUB_REWRITE_DNS_TTL` | `300` | DNS rewrite cache lifetime, in seconds |
 | `MIHOMO_AUTO` | `1` | Select Mihomo YAML for recognized client user agents |
@@ -26,6 +27,8 @@ paths refer to locations **inside** the container.
 | `I18N_FILE` | Bundled `web_i18n.json` | Optional custom translation dictionary |
 
 Bundled assets live in `submerge/assets/` (`/app/submerge/assets/` in the image).
+See [diagnostics](diagnostics.md) for configuration checks, timing fields and
+verification through nginx after deployment.
 
 ## Sources and merging
 

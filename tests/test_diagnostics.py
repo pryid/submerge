@@ -1,4 +1,4 @@
-"""Operator checks, using neutral configuration only."""
+"""Operator checks and safe timing reports, using neutral configuration only."""
 
 import base64
 import io
@@ -190,3 +190,31 @@ class VerifyTests(unittest.TestCase):
             code = main(["verify", "--url-stdin", "--require-routing"])
         self.assertEqual(code, 0)
         self.assertNotIn(URL, output.getvalue())
+
+
+class TimingTests(unittest.TestCase):
+    def test_measurements_preserve_result_and_hide_source_urls_headers_and_links(self):
+        def fetch(url):
+            return (
+                (503, "private-token", {}) if "other" in url else (200, LINK, {"Routing": "secret"})
+            )
+
+        with (
+            patch.object(
+                service,
+                "current_sub_bases",
+                return_value=["https://node.example.com", "https://other.example.com"],
+            ),
+            patch.object(service, "fetch", side_effect=fetch),
+            patch.object(service, "current_link_rewrite_rules", return_value={}),
+            patch.object(service, "ALLOW_PARTIAL", True),
+        ):
+            expected = service.merge_from_all("private-token")
+            metrics = {}
+            actual = service.merge_from_all("private-token", timings=metrics)
+        self.assertEqual(expected, actual)
+        self.assertEqual([s["http_status"] for s in metrics["sources"]], [200, 503])
+        self.assertEqual([s["source"] for s in metrics["sources"]], [1, 2])
+        self.assertGreaterEqual(metrics["merge_ms"], metrics["fetch_ms"])
+        for secret in ("example.com", "private-token", "test-secret", "Routing"):
+            self.assertNotIn(secret, json.dumps(metrics))

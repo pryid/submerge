@@ -17,6 +17,8 @@ Environment=LISTEN_HOST=127.0.0.1
 # Environment=SUB_LINK_REWRITES_FILE=/config/link_rewrites.json
 # Optional custom Mihomo profile (the image includes the default template).
 # Environment=MIHOMO_TEMPLATE_FILE=/config/mihomo.yaml
+# Optional per-source timing logs; no subscription IDs or URLs are included.
+# Environment=LOG_TIMINGS=1
 
 [Service]
 Restart=always

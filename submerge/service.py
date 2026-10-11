@@ -39,6 +39,7 @@ LISTEN_HOST = env("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(env("LISTEN_PORT", "18080"))
 TIMEOUT = float(env("TIMEOUT", "10"))
 ALLOW_PARTIAL = env("ALLOW_PARTIAL", "1").lower() not in ("0", "false", "no")
+LOG_TIMINGS = env("LOG_TIMINGS", "0").lower() in ("1", "true", "yes", "on")
 PAGE_TITLE = env("PAGE_TITLE", "Sub-merge")
 BUILD_REVISION = env("BUILD_REVISION", "")
 SUB_LINK_REWRITES = os.environ.get("SUB_LINK_REWRITES", "").strip()
@@ -735,7 +736,19 @@ def pick_some_headers(h: dict):
     return out
 
 
-def merge_from_all(sub_id: str):
+def merge_from_all(sub_id: str, timings=None):
+    started = time.monotonic()
+    try:
+        return _merge_from_all(sub_id, timings)
+    finally:
+        if timings is not None:
+            timings["merge_ms"] = round((time.monotonic() - started) * 1000, 2)
+            timings["merge_processing_ms"] = round(
+                timings["merge_ms"] - timings.get("fetch_ms", 0), 2
+            )
+
+
+def _merge_from_all(sub_id: str, timings):
     """
     Return status, body, headers, lines, note, traffic headers and per-source statistics.
     """
@@ -744,8 +757,30 @@ def merge_from_all(sub_id: str):
     # Submit all sources together, then collect in configuration order.
     # The shared pool bounds concurrent upstream work across HTTP requests.
     urls = [source_url(base, sub_id) for base in current_sub_bases()]
+    if timings is None:
+        responses = list(_FETCH_POOL.map(fetch, urls))
+    else:
+
+        def measured_fetch(url):
+            started = time.monotonic()
+            result = fetch(url)
+            return result, round((time.monotonic() - started) * 1000, 2)
+
+        started = time.monotonic()
+        measured = list(_FETCH_POOL.map(measured_fetch, urls))
+        timings["fetch_ms"] = round((time.monotonic() - started) * 1000, 2)
+        timings["sources"] = [
+            {
+                "source": i,
+                "http_status": result[0],
+                "elapsed_ms": elapsed,
+                "decoded_bytes": len(result[1].encode("utf-8")),
+            }
+            for i, (result, elapsed) in enumerate(measured, 1)
+        ]
+        responses = [result for result, _ in measured]
     sources = []
-    for index, (code, body, hdrs) in enumerate(_FETCH_POOL.map(fetch, urls), 1):
+    for index, (code, body, hdrs) in enumerate(responses, 1):
         available = code == 200 and bool(body.strip())
         sources.append(
             {

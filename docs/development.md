@@ -48,7 +48,7 @@ CI sets this automatically.
 ## Tests
 
 - `tests/test_config.py`: validation, reloads and recovery.
-- `tests/test_diagnostics.py`: configuration checks and public subscription verification.
+- `tests/test_diagnostics.py`: configuration checks, subscription verification and safe metrics.
 - `tests/test_service.py`: negotiation, metadata, rewrites and rendering.
 - `tests/test_http.py`: actual HTTP process, local upstream fixtures and optional containers.
 - `tests/test_amneziawg.py`: 3x-ui configuration decoding, names, browser copy/download and escaping.
@@ -120,8 +120,10 @@ package does not read deployment JSON; startup validates it before accepting tra
 compatibility launcher. Bundled assets are resolved relative to the package;
 local JSON defaults are relative to the working directory.
 
-The server and upstream fetch loop are synchronous. Concurrency changes should
-account for mutable config and DNS caches and retain stable merge order.
+The server handles clients in separate threads and fetches upstreams using a shared
+pool of eight workers. Configuration and DNS caches are protected by locks; source
+order is preserved. `submerge/cli.py` dispatches the service, `doctor` and `verify`;
+`submerge/diagnostics.py` implements the read-only operator checks.
 
 ## Configuration and assets
 

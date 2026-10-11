@@ -73,3 +73,40 @@ This confirms the delivered format, not whether every upstream contributed: use
 `ALLOW_PARTIAL=0` if all sources must succeed. Check actual import, connection and
 geofile downloads in the client. For external reachability, also run `verify`
 from a workstation (`uv run --locked python -m submerge verify --require-routing`).
+
+## Measure source latency
+
+Add to the Quadlet's `[Container]` section:
+
+```ini
+Environment=LOG_TIMINGS=1
+```
+
+Then apply the environment change and watch the journal:
+
+```bash
+systemctl daemon-reload
+systemctl restart submerge.service
+journalctl -u submerge.service -f -o cat
+```
+
+Each completed subscription handler emits one `timing` JSON record:
+
+- `request`: a random correlation value, unrelated to the subscription ID.
+- `sources`: source numbers in configuration order, `http_status` (`0` for network,
+  decoding or transport failures), `elapsed_ms` per fetch and `decoded_bytes` of
+  the UTF-8 body after stripping whitespace. These are not wire byte counts.
+- `fetch_ms`: elapsed time to collect all sources, including shared worker queue
+  wait. Sources run concurrently, so their individual durations must not be summed.
+- `merge_ms` and `merge_processing_ms`: total merge time and time outside the fetch
+  phase, including configuration loading, rewrites, deduplication and source metadata.
+- `request_ms`: handler time through writing the response; excludes nginx and client
+  network latency. `status` and `response_bytes` describe the prepared response.
+  For HEAD, `response_bytes` is the advertised GET size.
+- `write_completed`: whether the handler finished its write; this cannot prove
+  that the remote client received the entire response.
+
+Timings are disabled by default. HTTP access logs omit URLs, query parameters,
+User-Agent and client addresses even when timings are disabled. Diagnostic errors
+report exception types instead of potentially sensitive exception text. nginx has
+its own independent access logging configuration.

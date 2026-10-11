@@ -64,7 +64,7 @@ make test-image
 See [development and testing](docs/development.md) and the
 [configuration reference](docs/configuration.md).
 The [diagnostics guide](docs/diagnostics.md) covers `doctor`, public subscription
-verification after deployment.
+verification after deployment and per-source latency logs.
 
 ## Repository layout
 

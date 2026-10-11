@@ -175,6 +175,7 @@ class HTTPTests(unittest.TestCase):
             "LISTEN_PORT": str(port),
             "ALLOW_PARTIAL": "0" if strict else "1",
             "TIMEOUT": "1",
+            "LOG_TIMINGS": "1",
             "SUB_BASES_FILE": str(cls.config / "sub_bases.json"),
             "SUB_LINK_REWRITES_FILE": str(cls.config / "link_rewrites.json"),
             "SUB_METADATA_FILE": str(cls.config / "sub_metadata.json"),
@@ -274,6 +275,43 @@ class HTTPTests(unittest.TestCase):
         result = self.diagnostic("verify", "--url-stdin", "--require-routing", input=endpoint)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("Routing header absent", result.stdout)
+
+    def test_timing_and_access_logs_do_not_expose_subscription_tokens(self):
+        token = "diagnostic-private-token"
+        status, _, body = request(self.url + "/sub/" + token)
+        self.assertEqual(status, 200)
+        name, log, _ = self.instances[self.url]
+
+        def read_log():
+            if IMAGE:
+                result = subprocess.run(
+                    [ENGINE, "logs", name], capture_output=True, text=True, timeout=5
+                )
+                return result.stdout + result.stderr
+            # pread avoids changing the child's shared output file position.
+            return os.pread(log.fileno(), 1024 * 1024, 0).decode()
+
+        deadline = time.monotonic() + 3
+        while True:
+            text = read_log()
+            rows = [
+                json.loads(line.split("timing ", 1)[1])
+                for line in text.splitlines()
+                if "timing " in line
+            ]
+            if rows and rows[-1].get("response_bytes") == len(body):
+                break
+            if time.monotonic() >= deadline:
+                self.fail("No complete timing report")
+            time.sleep(0.02)
+        self.assertNotIn(token, text)
+        self.assertNotIn("vless://", text)
+        self.assertNotIn("node.example.com", text)
+        row = rows[-1]
+        self.assertEqual(row["status"], 200)
+        self.assertTrue(row["write_completed"])
+        self.assertEqual([s["source"] for s in row["sources"]], [1, 2])
+        self.assertGreaterEqual(row["request_ms"], row["merge_ms"])
 
     def test_health_does_not_fetch_upstreams(self):
         before = Upstream.calls

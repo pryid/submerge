@@ -1,8 +1,11 @@
 """HTTP transport and process lifecycle."""
 
+import json
 import logging
 import signal
 import sys
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -10,6 +13,13 @@ from . import service
 
 
 class SubscriptionHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # BaseHTTPRequestHandler includes the request URL/token in its default log.
+        pass
+
+    def log_request(self, code="-", size="-"):
+        logging.info("HTTP response status=%s", code)
+
     def do_GET(self):
         self._handle_subscription()
 
@@ -18,6 +28,9 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
 
     def respond(self, status, body="", content_type="text/plain; charset=utf-8", headers=None):
         out = body.encode("utf-8")
+        self.response_status = status
+        self.response_bytes = len(out)
+        self.write_completed = False
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         for key, value in (headers or {}).items():
@@ -26,8 +39,11 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(out)
+        self.write_completed = True
 
     def _handle_subscription(self):
+        started = time.monotonic()
+        timings = None
         try:
             path = urlparse(self.path).path
             if path == "/healthz":
@@ -38,9 +54,11 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
             if not service.ID_RE.fullmatch(sub_id):
                 return self.respond(404)
 
+            if service.LOG_TIMINGS:
+                timings = {"request": uuid.uuid4().hex[:12]}
             fmt = service.response_format(self.headers, self.path)
             status, body, any_hdrs, lines, note, hdrs_for_userinfo, sources = (
-                service.merge_from_all(sub_id)
+                service.merge_from_all(sub_id, timings=timings)
             )
             userinfo = service.aggregate_userinfo(hdrs_for_userinfo)
             userinfo["expiry_complete"] &= all(source["available"] for source in sources)
@@ -86,9 +104,19 @@ class SubscriptionHandler(BaseHTTPRequestHandler):
             return self.respond(status, page, "text/html; charset=utf-8")
         except (BrokenPipeError, ConnectionResetError):
             return
-        except Exception:
-            logging.exception("Subscription request failed")
+        except Exception as error:
+            # Exception messages/tracebacks can contain upstream URLs and credentials.
+            logging.error("Subscription request failed (%s)", type(error).__name__)
             self.respond(500, "Internal server error\n")
+        finally:
+            if timings is not None:
+                timings.update(
+                    request_ms=round((time.monotonic() - started) * 1000, 2),
+                    status=getattr(self, "response_status", 500),
+                    response_bytes=getattr(self, "response_bytes", 0),
+                    write_completed=getattr(self, "write_completed", False),
+                )
+                logging.info("timing %s", json.dumps(timings, separators=(",", ":")))
 
 
 def main():
@@ -102,7 +130,9 @@ def main():
         service.load_i18n()
         service.load_mihomo_template()
     except (OSError, ValueError) as error:
-        raise SystemExit(f"Invalid configuration: {error}") from error
+        raise SystemExit(
+            f"Invalid configuration ({type(error).__name__}); run python -m submerge doctor"
+        ) from None
     # Python is PID 1 in the image; explicitly handle container stop signals.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     with ThreadingHTTPServer(

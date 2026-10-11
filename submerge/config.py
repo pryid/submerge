@@ -51,7 +51,11 @@ class ReloadingJSON:
                 raise
             message = str(error)
             if message != self.last_error:
-                logging.warning("Keeping previous configuration for %s: %s", path, error)
+                logging.warning(
+                    "Keeping previous configuration for %s (%s; contents omitted)",
+                    path,
+                    type(error).__name__,
+                )
                 self.last_error = message
             return self.value
 
