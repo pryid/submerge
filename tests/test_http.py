@@ -102,6 +102,7 @@ class HTTPTests(unittest.TestCase):
         cls.directory = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.directory.cleanup)
         cls.config = Path(cls.directory.name)
+        cls.instances = {}
         cls.config.chmod(0o755)  # The image runs as an unprivileged user.
         cls.upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
         cls.addClassCleanup(cls.upstream.server_close)
@@ -201,7 +202,8 @@ class HTTPTests(unittest.TestCase):
             }
             process_env.update(env)
         url = f"http://127.0.0.1:{port}"
-        cls.start_process(cmd, url + "/healthz", process_env)
+        name, log = cls.start_process(cmd, url + "/healthz", process_env)
+        cls.instances[url] = (name, log, process_env)
         return url
 
     @classmethod
@@ -235,12 +237,32 @@ class HTTPTests(unittest.TestCase):
         while time.monotonic() < deadline and process.poll() is None:
             try:
                 if request(ready_url)[0] == 200:
-                    return
+                    return name, log
             except (OSError, URLError):
                 pass
             time.sleep(0.1)
         log.seek(0)
         raise RuntimeError("Service failed to start:\n" + log.read().decode(errors="replace"))
+
+    def diagnostic(self, *args, input=""):
+        name, _, env = self.instances[self.url]
+        if IMAGE:
+            cmd = [ENGINE, "exec", "-i", name, "python", "-m", "submerge", *args]
+        else:
+            cmd = [sys.executable, "-m", "submerge", *args]
+        return subprocess.run(
+            cmd, input=input, capture_output=True, text=True, env=env, cwd=ROOT, timeout=15
+        )
+
+    def test_doctor_in_running_deployment_detects_missing_metadata(self):
+        result = self.diagnostic("doctor", "--require-routing", "happ")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("happ routing configured", result.stdout)
+        (self.config / "sub_metadata.json").unlink()
+        result = self.diagnostic("doctor", "--require-routing", "happ")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("metadata", result.stdout)
+        self.assertIn("missing", result.stdout)
 
     def test_health_does_not_fetch_upstreams(self):
         before = Upstream.calls
