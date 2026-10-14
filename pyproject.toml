@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = ["qrcode==8.2"]
 
 [dependency-groups]
-dev = ["ruff==0.16.10"]
+dev = ["ruff==0.17.0"]
 
 [tool.uv]
 package = false
